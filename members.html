@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Members | Orbweave</title>
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
+<style>
+  :root {
+    --bg: #e8eaf1; --surface: #f6f7fb; --ink: #181b3a; --muted: #51567a;
+    --thread: #3a3fe0; --thread-soft: #c9cbf5; --alert: #b3361f; --line: #c4c7dc;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12142b; --surface: #1b1e3d; --ink: #e7e9f8; --muted: #a2a7d1; --thread: #8f98ff; --thread-soft: #34388a; --alert: #ff9a85; --line: #2f3363; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 17px; line-height: 1.6; }
+  :focus-visible { outline: 3px solid var(--thread); outline-offset: 3px; border-radius: 4px; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 22px 0; gap: 16px; }
+  .brand { font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif; font-size: 1.5rem; font-weight: 700; text-decoration: none; color: inherit; }
+  h1 { font-family: "Iowan Old Style", Palatino, Georgia, serif; font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; letter-spacing: -0.02em; margin: 24px 0 10px; }
+  p { margin: 0 0 1em; color: var(--muted); max-width: 52ch; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 999px; font: inherit; font-weight: 600; cursor: pointer; border: 2px solid var(--thread); background: var(--thread); color: #fff; }
+  @media (prefers-color-scheme: dark) { .btn { color: #12142b; } }
+  .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+  .btn:disabled { opacity: .55; cursor: progress; }
+  form { display: grid; gap: 14px; max-width: 460px; margin-top: 24px; }
+  input[type=text], input[type=file] { font: inherit; width: 100%; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); }
+  label.t { font-weight: 600; display: block; margin-bottom: 6px; }
+  .msg { margin-top: 16px; padding: 14px 16px; border-radius: 12px; max-width: 460px; }
+  .msg[hidden], [hidden] { display: none !important; }
+  .msg.err { border: 1.5px solid var(--alert); color: var(--alert); }
+  .msg.ok { border: 1.5px solid var(--thread); background: var(--thread-soft); }
+  .preview { max-width: 240px; border-radius: 12px; border: 1.5px solid var(--line); }
+  .grid { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); display: block; }
+  .empty { margin-top: 36px; padding: 28px; border: 1.5px dashed var(--line); border-radius: 16px; color: var(--muted); max-width: 520px; }
+  footer { padding: 40px 0 56px; color: var(--muted); font-size: .92rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="/">Orbweave</a>
+    <button class="btn ghost" id="out" type="button" hidden>Sign out</button>
+  </header>
+
+  <main>
+    <!-- Signed out -->
+    <section id="gate" hidden>
+      <h1>Members</h1>
+      <p>Enter the invite code we sent you. Don't have one? Request an invite from the home page.</p>
+      <form id="joinForm" novalidate>
+        <div>
+          <label class="t" for="code">Invite code</label>
+          <input type="text" id="code" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="abc234-0kq2-1a2b3c4d5e6f">
+        </div>
+        <button class="btn" type="submit" id="joinBtn">Sign in</button>
+      </form>
+      <div class="msg err" id="joinErr" role="alert" hidden></div>
+    </section>
+
+    <!-- Signed in -->
+    <section id="room" hidden>
+      <h1>Member pictures</h1>
+      <p>Only people with an invite code can see these. Pictures are cleaned of location and camera data in your browser before they upload.</p>
+      <form id="picForm" novalidate>
+        <div>
+          <label class="t" for="pic">Add a picture (JPG, PNG or WebP)</label>
+          <input type="file" id="pic" accept="image/jpeg,image/png,image/webp">
+        </div>
+        <img class="preview" id="preview" alt="Preview of your picture" hidden>
+        <label style="display:flex;gap:10px;align-items:flex-start;font-size:.95rem">
+          <input type="checkbox" id="ok" style="margin-top:5px">
+          <span>I have the right to share this picture, it shows nothing illegal, and everyone in it has agreed to be shown.</span>
+        </label>
+        <button class="btn" type="submit" id="picBtn">Post picture</button>
+      </form>
+      <div class="msg ok" id="picDone" role="status" hidden>Picture posted.</div>
+      <div class="msg err" id="picErr" role="alert" hidden></div>
+      <div class="grid" id="grid" aria-live="polite"></div>
+      <div class="empty" id="empty" hidden>No pictures yet. Post the first one.</div>
+    </section>
+  </main>
+
+  <footer>Pictures here are stored on our hosting provider until they are deleted. Don't post anything you wouldn't want to risk being seen.</footer>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var gate = $("gate"), room = $("room"), out = $("out");
+  var cleanBlob = null;
+
+  function showGate() { gate.hidden = false; room.hidden = true; out.hidden = true; }
+  function showRoom() { gate.hidden = true; room.hidden = false; out.hidden = false; loadGrid(); }
+
+  function check() {
+    fetch("/api/members", { credentials: "same-origin" }).then(function (r) {
+      if (r.status === 401) return showGate();
+      showRoom();
+    }).catch(showGate);
+  }
+
+  function loadGrid() {
+    var grid = $("grid"); grid.innerHTML = "";
+    fetch("/api/members", { credentials: "same-origin" }).then(function (r) {
+      if (r.status === 401) { showGate(); return { images: [] }; }
+      return r.json();
+    }).then(function (d) {
+      var list = d.images || [];
+      $("empty").hidden = list.length > 0;
+      list.forEach(function (u) {
+        var im = document.createElement("img");
+        im.src = u; im.alt = "Member picture"; im.loading = "lazy";
+        grid.appendChild(im);
+      });
+    }).catch(function () { $("empty").hidden = false; });
+  }
+
+  $("joinForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var err = $("joinErr"); err.hidden = true;
+    var code = $("code").value.trim();
+    if (!code) { err.textContent = "Enter your invite code."; err.hidden = false; $("code").focus(); return; }
+    $("joinBtn").disabled = true;
+    fetch("/api/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code }), credentials: "same-origin" })
+      .then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+      }).then(function (x) {
+        if (!x.ok) { err.textContent = x.d.error || "Could not sign in."; err.hidden = false; return; }
+        $("code").value = "";
+        if (window.va) window.va("event", { name: "member_signin" });
+        showRoom();
+      }).catch(function () { err.textContent = "Could not sign in. Try again in a moment."; err.hidden = false; })
+      .then(function () { $("joinBtn").disabled = false; });
+  });
+
+  out.addEventListener("click", function () {
+    fetch("/api/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ logout: true }), credentials: "same-origin" })
+      .then(showGate);
+  });
+
+  // Redraw the picture on a canvas to drop EXIF data (GPS, camera, timestamps) before upload.
+  function cleanImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var max = 1600, w = img.naturalWidth, h = img.naturalHeight, s = Math.min(1, max / Math.max(w, h));
+        var c = document.createElement("canvas");
+        c.width = Math.round(w * s); c.height = Math.round(h * s);
+        var ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob(function (b) { b ? resolve(b) : reject(new Error("encode")); }, "image/jpeg", 0.85);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("load")); };
+      img.src = url;
+    });
+  }
+  function picFail(m) { $("picErr").textContent = m; $("picErr").hidden = false; $("picDone").hidden = true; }
+
+  $("pic").addEventListener("change", async function () {
+    cleanBlob = null; $("preview").hidden = true; $("picErr").hidden = true; $("picDone").hidden = true;
+    var f = $("pic").files[0]; if (!f) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { picFail("Choose a JPG, PNG or WebP picture."); $("pic").value = ""; return; }
+    if (f.size > 15 * 1024 * 1024) { picFail("That picture is over 15 MB. Choose a smaller one."); $("pic").value = ""; return; }
+    try {
+      cleanBlob = await cleanImage(f);
+      if (cleanBlob.size > 2 * 1024 * 1024) { cleanBlob = null; picFail("That picture is still too large after shrinking. Choose a simpler one."); $("pic").value = ""; return; }
+      $("preview").src = URL.createObjectURL(cleanBlob); $("preview").hidden = false;
+    } catch (e) { picFail("We couldn't read that picture. Try another file."); $("pic").value = ""; }
+  });
+
+  $("picForm").addEventListener("submit", async function (ev) {
+    ev.preventDefault();
+    $("picErr").hidden = true; $("picDone").hidden = true;
+    if (!cleanBlob) { picFail("Choose a picture first."); return; }
+    if (!$("ok").checked) { picFail("Tick the box to confirm you have the right to share this picture."); return; }
+    $("picBtn").disabled = true;
+    try {
+      var r = await fetch("/api/members", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: cleanBlob, credentials: "same-origin" });
+      if (r.status === 401) { showGate(); return; }
+      if (!r.ok) throw new Error(r.status === 429 ? "Too many pictures. Try again later." : r.status === 413 ? "That picture is too large." : "Your picture was not posted. Try again in a moment.");
+      if (window.va) window.va("event", { name: "member_upload" });
+      $("picDone").hidden = false; $("picForm").reset(); $("preview").hidden = true; cleanBlob = null;
+      loadGrid();
+    } catch (e) { picFail(e.message || "Your picture was not posted."); }
+    finally { $("picBtn").disabled = false; }
+  });
+
+  check();
+})();
+</script>
+</body>
+</html>
