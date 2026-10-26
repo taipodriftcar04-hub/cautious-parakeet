@@ -123,7 +123,16 @@
   .product .price { font-weight: 700; color: var(--thread); }
   .product .desc { color: var(--muted); font-size: 0.97rem; margin: 0; }
   .product .when { color: var(--muted); font-size: 0.85rem; }
-  .product .btn { margin-top: auto; align-self: flex-start; padding: 9px 18px; font-size: 0.95rem; }
+  .product .actions { margin-top: auto; padding-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .product .btn { padding: 9px 18px; font-size: 0.95rem; }
+  .order-form { margin-top: 12px; display: grid; gap: 10px; }
+  .order-form[hidden] { display: none; }
+  .order-form label { font-weight: 600; font-size: 0.9rem; display: grid; gap: 4px; }
+  .order-form input, .order-form textarea { font: inherit; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); font-weight: 400; }
+  .order-form small { color: var(--muted); }
+  .order-msg { font-size: 0.93rem; }
+  .order-msg.ok { color: var(--thread); font-weight: 600; }
+  .order-msg.err { color: var(--alert); font-weight: 600; }
 
   .wall-tools { margin-top: 28px; display: grid; gap: 14px; max-width: 460px; }
   .wall-tools input[type=file] { font: inherit; width: 100%; padding: 12px; border-radius: 12px; border: 1.5px dashed var(--line); background: var(--surface); color: var(--ink); }
@@ -428,9 +437,42 @@
           var t = new Date(p.postedAt);
           if (!isNaN(t)) { var w = document.createElement("div"); w.className = "when"; w.textContent = "Posted " + t.toLocaleDateString(undefined, { month: "short", day: "numeric" }); body.appendChild(w); }
         }
+        var actions = document.createElement("div"); actions.className = "actions";
+        var ob = document.createElement("button"); ob.type = "button"; ob.className = "btn"; ob.textContent = "I want this";
+        actions.appendChild(ob);
         if (p.link && /^https?:\/\//i.test(p.link)) {
-          var a = document.createElement("a"); a.className = "btn"; a.href = p.link; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "View product"; body.appendChild(a);
+          var a = document.createElement("a"); a.className = "btn ghost"; a.href = p.link; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "View product"; actions.appendChild(a);
         }
+        body.appendChild(actions);
+        var of = document.createElement("form"); of.className = "order-form"; of.hidden = true; of.noValidate = true;
+        of.innerHTML = '<label>Your name<input name="name" type="text" maxlength="80" autocomplete="name"></label>' +
+          '<label>Email or WhatsApp number<input name="contact" type="text" maxlength="120" autocomplete="off"></label>' +
+          '<label>Message (optional)<textarea name="message" maxlength="500" rows="3" placeholder="Quantity, size, delivery address..."></textarea></label>' +
+          '<div style="position:absolute;left:-9999px" aria-hidden="true"><input name="website" type="text" tabindex="-1" autocomplete="off"></div>' +
+          '<button class="btn" type="submit">Send request</button>' +
+          '<small>Your details go only to the seller.</small>' +
+          '<div class="order-msg" role="status"></div>';
+        body.appendChild(of);
+        ob.addEventListener("click", function () { of.hidden = !of.hidden; if (!of.hidden) of.elements.name.focus(); });
+        (function (productName, formEl) {
+          formEl.addEventListener("submit", async function (ev) {
+            ev.preventDefault();
+            var msg = formEl.querySelector(".order-msg"); msg.className = "order-msg"; msg.textContent = "";
+            var nm = formEl.elements.name.value.trim(), ct = formEl.elements.contact.value.trim();
+            if (!nm) { msg.className = "order-msg err"; msg.textContent = "Enter your name."; formEl.elements.name.focus(); return; }
+            if (ct.length < 5) { msg.className = "order-msg err"; msg.textContent = "Enter an email or WhatsApp number so the seller can reply."; formEl.elements.contact.focus(); return; }
+            var sb = formEl.querySelector("button[type=submit]"); sb.disabled = true;
+            try {
+              var r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ product: productName, name: nm, contact: ct, message: formEl.elements.message.value, website: formEl.elements.website.value }) });
+              if (!r.ok) throw new Error(r.status === 429 ? "Too many requests. Try again later." : "Your request was not sent. Try again in a moment.");
+              if (window.va) window.va("event", { name: "order_request" });
+              msg.className = "order-msg ok"; msg.textContent = "Request sent. The seller will contact you.";
+              formEl.reset();
+            } catch (e) { msg.className = "order-msg err"; msg.textContent = e.message || "Your request was not sent."; }
+            finally { sb.disabled = false; }
+          });
+        })(p.name, of);
         card.appendChild(img); card.appendChild(body); grid.appendChild(card);
       });
       document.getElementById("products").hidden = false;
