@@ -2,7 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#e8eaf1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12142b" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Orbweave">
 <title>Orbweave: a private network for people who'd rather not be followed</title>
 <meta name="description" content="Orbweave routes every message through three relays so no single one knows who you are, what you said, and who you said it to.">
 <script>
@@ -189,7 +197,9 @@
         <div class="hero-cta">
           <a class="btn" href="#invite">Request an invite</a>
           <a class="btn ghost" href="#how">See how it works</a>
+          <button class="btn ghost" id="installBtn" type="button" hidden>Install app</button>
         </div>
+        <p id="iosHint" style="display:none;margin-top:14px;color:var(--muted);font-size:0.95rem;max-width:44ch">To install on iPhone: tap the Share button in Safari, then Add to Home Screen.</p>
       </div>
 
       <div class="demo" aria-labelledby="demo-label">
@@ -420,6 +430,28 @@
     btn.disabled = false;
   });
 
+  /* ---- Install as an app ---- */
+  var deferredInstall = null;
+  var installBtn = document.getElementById("installBtn");
+  var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  window.addEventListener("beforeinstallprompt", function (ev) {
+    ev.preventDefault(); deferredInstall = ev;
+    if (!standalone) installBtn.hidden = false;
+  });
+  installBtn.addEventListener("click", async function () {
+    if (!deferredInstall) return;
+    deferredInstall.prompt();
+    try { await deferredInstall.userChoice; } catch (e) {}
+    deferredInstall = null; installBtn.hidden = true;
+  });
+  window.addEventListener("appinstalled", function () {
+    installBtn.hidden = true;
+    if (window.va) window.va("event", { name: "app_installed" });
+  });
+  if (!standalone && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    document.getElementById("iosHint").style.display = "block";
+  }
+
   /* ---- Products (posted by the owner from the admin page) ---- */
   function loadProducts() {
     fetch("/api/products").then(function (r) { return r.ok ? r.json() : { products: [] }; }).then(function (d) {
@@ -596,6 +628,11 @@
     }
   });
 })();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () {}); });
+}
 </script>
 </body>
 </html>
