@@ -1,4 +1,5 @@
-// Orbweave: one function that serves every /api/<name> address.
+// Orbweave: one function that serves every /api/<name> address.// Orbweave.
+require("@vercel/blob");
 // (Combined into a single file so it can be uploaded easily from a phone.)
 const __real = require;
 const __mods = {};
