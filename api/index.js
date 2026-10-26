@@ -1,6 +1,5 @@
-// Orbweave: one function that serves every /api/<name> address.// Orbweave.
-require("@vercel/blob");
-// (Combined into a single file so it can be uploaded easily from a phone.)
+// Orbweave: one function that serves every /api/<name> address.
+require("@vercel/blob"); // static require so Vercel installs and bundles the storage library
 const __real = require;
 const __mods = {};
 function __req(name) {
@@ -493,6 +492,10 @@ module.exports = async function handler(req, res) {
         await put("products/p.json", JSON.stringify(meta), { access: "public", contentType: "application/json", addRandomSuffix: true });
         return res.status(200).json({ ok: true });
       }
+      if (action === "deleteorder" && isBlobUrlUnder(url, "orders")) {
+        await del(url);
+        return res.status(200).json({ ok: true });
+      }
       if (action === "deleteproduct" && isBlobUrlUnder(url, "products") && /\.json$/.test(new URL(url).pathname)) {
         try {
           const r = await fetch(url);
@@ -519,6 +522,31 @@ module.exports = async function handler(req, res) {
   const key = encodeURIComponent(req.query.key);
   let products = [];
   try { products = await listProducts(60); } catch (e) { products = []; }
+
+  let orders = [];
+  try {
+    const ob = (await list({ prefix: "orders/", limit: 200 })).blobs
+      .filter((b) => b.pathname.endsWith(".json"))
+      .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+    orders = (await Promise.all(ob.map(async (b) => {
+      try {
+        const r = await fetch(b.url);
+        if (!r.ok) return null;
+        return Object.assign(await r.json(), { id: b.url });
+      } catch (e) { return null; }
+    }))).filter(Boolean);
+  } catch (e) { orders = []; }
+
+  const orderCard = (o) => {
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(o.contact || "");
+    const contact = isEmail ? `<a href="mailto:${esc(o.contact)}">${esc(o.contact)}</a>` : esc(o.contact);
+    return `<div class="c" data-url="${esc(o.id)}" data-kind="order">
+      <div><strong>${esc(o.product || "Product")}</strong><br><small>${esc(String(o.at || "").slice(0, 16).replace("T", " "))} UTC</small></div>
+      <p><b>${esc(o.name)}</b><br>${contact}</p>
+      <p>${esc(o.message) || "<i>No message</i>"}</p>
+      <div><button class="no">Delete</button></div>
+    </div>`;
+  };
 
   const productCard = (p) => `<div class="c" data-url="${esc(p.id)}" data-kind="product">
       <img src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy">
@@ -551,6 +579,10 @@ module.exports = async function handler(req, res) {
   #codes div{font-family:ui-monospace,monospace;font-size:1.1rem;margin:8px 0;user-select:all}
 </style></head><body>
 <h1>Orbweave admin</h1>
+
+<h2>Orders and messages (${orders.length})</h2>
+<p>People who tapped "I want this" on a product. Reply to them using the contact they left, then delete the request when you're done so their details don't pile up.</p>
+<div class="g">${orders.map(orderCard).join("") || "<p>No requests yet.</p>"}</div>
 
 <h2>Post a product</h2>
 <div class="box">
@@ -631,7 +663,7 @@ document.querySelectorAll(".c").forEach(function(card){
       .catch(function(){ alert("That did not work. Reload and try again."); });
   }
   var ok=card.querySelector(".ok"); if(ok) ok.onclick=function(){act("approve")};
-  card.querySelector(".no").onclick=function(){act(kind==="pending"?"delete":kind==="product"?"deleteproduct":"deletemember")};
+  card.querySelector(".no").onclick=function(){act(kind==="pending"?"delete":kind==="product"?"deleteproduct":kind==="order"?"deleteorder":"deletemember")};
 });
 </script></body></html>`);
 };
@@ -698,9 +730,77 @@ function safeParse(s) {
 return module.exports;
 })({ exports: {} }, {}, __req);
 
+// ===== order =====
+__mods["order"] = (function (module, exports, require) {
+// POST /api/order  {product, name, contact, message, website}
+// A visitor taps "I want this" on a product. The request is saved for your admin page
+// and, if RESEND_API_KEY and INVITE_TO_EMAIL are set, also emailed to you.
+
+const { put } = require("@vercel/blob");
+const { jsonBody, limited, clientIp } = require("./_auth");
+
+function clean(s, max) {
+  return String(s == null ? "" : s).replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
+}
+
+module.exports = async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+  const b = jsonBody(req);
+
+  // Spam trap: real people never fill this hidden field. Pretend success.
+  if (b.website) return res.status(200).json({ ok: true });
+
+  if (limited("order:" + clientIp(req), 5, 10 * 60 * 1000)) {
+    return res.status(429).json({ error: "Too many requests. Try again later." });
+  }
+
+  const product = clean(b.product, 80);
+  const name = clean(b.name, 80);
+  const contact = clean(b.contact, 120);
+  const message = clean(b.message, 500);
+  if (!name) return res.status(400).json({ error: "Enter your name." });
+  if (contact.length < 3) return res.status(400).json({ error: "Enter an email or phone number so we can reply." });
+
+  const order = { product, name, contact, message, at: new Date().toISOString() };
+
+  try {
+    await put("orders/o.json", JSON.stringify(order), { access: "public", contentType: "application/json", addRandomSuffix: true });
+  } catch (e) {
+    return res.status(500).json({ error: "Could not send your request." });
+  }
+
+  // Optional email notification. A failure here does not fail the request.
+  const key = process.env.RESEND_API_KEY;
+  const to = process.env.INVITE_TO_EMAIL;
+  if (key && to) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: process.env.INVITE_FROM_EMAIL || "Orbweave <onboarding@resend.dev>",
+          to: [to],
+          subject: `New request: ${product || "product"}`,
+          text: `Product: ${product}\nName: ${name}\nContact: ${contact}\n\n${message}`,
+        }),
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  return res.status(200).json({ ok: true });
+};
+
+return module.exports;
+})({ exports: {} }, {}, __req);
+
 const __routes = {
   join: __mods.join, members: __mods.members, "member-image": __mods["member-image"],
-  products: __mods.products, upload: __mods.upload, wall: __mods.wall, admin: __mods.admin, invite: __mods.invite,
+  products: __mods.products, upload: __mods.upload, wall: __mods.wall, admin: __mods.admin,
+  invite: __mods.invite, order: __mods.order,
 };
 module.exports = async function handler(req, res) {
   const route = String((req.query && req.query.route) || "").toLowerCase().replace(/[^a-z-]/g, "");
