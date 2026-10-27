@@ -3,10 +3,83 @@ require("@vercel/blob"); // static require so Vercel installs and bundles the st
 const __real = require;
 const __mods = {};
 function __req(name) {
-  if (name === "./_auth") return __mods._auth;
-  if (name === "./_products") return __mods._products;
+  if (name.indexOf("./") === 0) return __mods[name.slice(2)];
   return __real(name);
 }
+
+// ===== _db =====
+__mods["_db"] = (function (module, exports, require) {
+// Shared helper (underscore = not a public URL).
+// Talks to a Redis database over HTTPS (Upstash, added from the Vercel Storage tab),
+// so no extra npm package is needed. Also hashes and checks passwords.
+//
+// Env vars (added automatically when you connect the database to the project):
+//   KV_REST_API_URL + KV_REST_API_TOKEN   (or UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN)
+
+const crypto = require("crypto");
+
+function conf() {
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  if (!url || !token) throw Object.assign(new Error("database not configured"), { code: "NODB" });
+  return { url, token };
+}
+
+function configured() {
+  try { conf(); return true; } catch (e) { return false; }
+}
+
+async function cmd(...args) {
+  const { url, token } = conf();
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(args.map((a) => String(a))),
+  });
+  let d = {};
+  try { d = await r.json(); } catch (e) { /* ignore */ }
+  if (!r.ok || d.error) throw new Error(d.error || "database error");
+  return d.result;
+}
+
+// Counts an attempt and returns how many there have been in the current window.
+async function rateHit(key, windowSec) {
+  const n = await cmd("INCR", key);
+  if (n === 1) await cmd("EXPIRE", key, windowSec);
+  return n;
+}
+
+function scrypt(pw, salt) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(String(pw), salt, 64, { N: 16384, r: 8, p: 1 }, (e, k) => (e ? reject(e) : resolve(k)));
+  });
+}
+
+async function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const k = await scrypt(pw, salt);
+  return { salt: salt.toString("base64"), hash: k.toString("base64") };
+}
+
+async function verifyPassword(pw, rec) {
+  const k = await scrypt(pw, Buffer.from(rec.salt, "base64"));
+  const h = Buffer.from(rec.hash, "base64");
+  return h.length === k.length && crypto.timingSafeEqual(h, k);
+}
+
+async function getUser(name) {
+  const raw = await cmd("GET", "user:" + name);
+  return raw ? JSON.parse(raw) : null;
+}
+
+async function putUser(u) {
+  await cmd("SET", "user:" + u.name, JSON.stringify(u));
+}
+
+module.exports = { cmd, configured, rateHit, hashPassword, verifyPassword, getUser, putUser };
+
+return module.exports;
+})({ exports: {} }, {}, __req);
 
 // ===== _auth =====
 __mods["_auth"] = (function (module, exports, require) {
@@ -14,12 +87,16 @@ __mods["_auth"] = (function (module, exports, require) {
 //
 // Invite codes are signed, so they need no database:  abc234-0kq2-1a2b3c4d5e6f
 //   id (6 chars) - expiry day (base36) - signature
-// Member sessions are signed cookies that last 30 days.
+// A code is used once, to create an account. After that members sign in with a
+// username and password. Sessions are signed cookies that last 90 days and are
+// checked against the account every time (removing a member or resetting a
+// password signs their old devices out).
 //
 // Required env var: SESSION_SECRET (random string, 32+ characters)
 // Optional env var: REVOKED_CODES (comma-separated code ids to block, e.g. "abc234,xyz789")
 
 const crypto = require("crypto");
+const db = require("./_db");
 
 const DAY = 86400000;
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -62,16 +139,19 @@ function checkCode(raw) {
   return { id };
 }
 
-function sessionCookie(id) {
-  const payload = Buffer.from(JSON.stringify({ id, exp: Date.now() + 30 * DAY })).toString("base64url");
+const SESSION_DAYS = 90;
+
+function sessionCookie(user) {
+  const payload = Buffer.from(JSON.stringify({ u: user.name, id: user.uid || "", sv: user.sv, exp: Date.now() + SESSION_DAYS * DAY })).toString("base64url");
   const token = payload + "." + hmac("sess:" + payload);
-  return `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${30 * 86400}`;
+  return `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${SESSION_DAYS * 86400}`;
 }
 function clearCookie() {
   return `${COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
 }
 
-function readSession(req) {
+// Returns { user } for a signed-in member, or null.
+async function readSession(req) {
   try {
     const header = req.headers.cookie || "";
     const pair = header.split(";").map((s) => s.trim()).find((s) => s.startsWith(COOKIE + "="));
@@ -80,9 +160,10 @@ function readSession(req) {
     const [payload, sig] = token.split(".");
     if (!payload || !sig || !safeEq(hmac("sess:" + payload), sig)) return null;
     const data = JSON.parse(Buffer.from(payload, "base64url").toString());
-    if (!data.exp || data.exp < Date.now()) return null;
-    if (revoked().includes(String(data.id))) return null;
-    return { id: data.id };
+    if (!data.exp || data.exp < Date.now() || !data.u) return null;
+    const user = await db.getUser(String(data.u));
+    if (!user || user.sv !== data.sv || (user.uid || "") !== (data.id || "")) return null; // uid stops an old sign-in from working on a new account that reuses a removed username
+    return { user: user.name };
   } catch (e) {
     return null;
   }
@@ -167,38 +248,286 @@ module.exports = { listProducts };
 return module.exports;
 })({ exports: {} }, {}, __req);
 
-// ===== join =====
-__mods["join"] = (function (module, exports, require) {
-// POST /api/join  {code}     -> checks the invite code and signs the member in
-// POST /api/join  {logout:true} -> signs out
+// ===== account =====
+__mods["account"] = (function (module, exports, require) {
+// GET  /api/account                          -> { user } if signed in, else 401
+// GET  /api/account?info=1                   -> { inviteRequired } (public)
+// POST /api/account {action:"signup", username, password, code}
+// POST /api/account {action:"login", username, password}
+// POST /api/account {action:"logout"}
+// POST /api/account {action:"password", oldPassword, newPassword}
 
-const { checkCode, sessionCookie, clearCookie, jsonBody, limited, clientIp } = require("./_auth");
+const { checkCode, sessionCookie, clearCookie, readSession, jsonBody, clientIp } = require("./_auth");
+const crypto = require("crypto");
+const db = require("./_db");
+
+// Sign-up is open by default. Set the environment variable REQUIRE_INVITE to "yes" to require an invite code again.
+function inviteRequired() { return String(process.env.REQUIRE_INVITE || "").toLowerCase() === "yes"; }
+
+const NAME_RE = /^[a-z0-9_]{3,20}$/;
+const WINDOW = 15 * 60; // seconds
+
+let dummy = null; // used so unknown usernames take as long to check as real ones
+async function burnTime(pw) {
+  if (!dummy) dummy = await db.hashPassword("not-a-real-password");
+  await db.verifyPassword(String(pw), dummy);
+}
+
+function validPassword(p) {
+  return typeof p === "string" && p.length >= 8 && p.length <= 100;
+}
 
 module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-  const body = jsonBody(req);
-
-  if (body.logout) {
-    res.setHeader("Set-Cookie", clearCookie());
-    return res.status(200).json({ ok: true });
-  }
-
-  // Slow down guessing: 10 tries per 10 minutes per visitor.
-  if (limited("join:" + clientIp(req), 10, 10 * 60 * 1000)) {
-    return res.status(429).json({ error: "Too many tries. Wait a few minutes." });
-  }
-
   try {
-    const c = checkCode(body.code);
-    if (!c) return res.status(401).json({ error: "That code is not valid or has expired." });
-    res.setHeader("Set-Cookie", sessionCookie(c.id));
-    return res.status(200).json({ ok: true });
+    if (req.method === "GET") {
+      if (req.query && req.query.info) return res.status(200).json({ inviteRequired: inviteRequired() });
+      const s = await readSession(req);
+      if (!s) return res.status(401).json({ error: "Not signed in." });
+      return res.status(200).json({ user: s.user });
+    }
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "GET, POST");
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    const b = jsonBody(req);
+    const action = String(b.action || "");
+    const ip = clientIp(req);
+
+    if (action === "logout") {
+      res.setHeader("Set-Cookie", clearCookie());
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === "signup") {
+      // Spam trap: real people never fill this hidden field.
+      if (b.website) return res.status(400).json({ error: "Could not create the account." });
+      // 5 new accounts per hour per connection.
+      if ((await db.rateHit("rl:signup:" + ip, 3600)) > 5) {
+        return res.status(429).json({ error: "Too many sign-ups from this connection. Try again later." });
+      }
+      const username = String(b.username || "").trim().toLowerCase();
+      const password = b.password;
+      if (!NAME_RE.test(username)) {
+        return res.status(400).json({ error: "Username must be 3 to 20 letters, numbers or underscores." });
+      }
+      if (!validPassword(password) || password.toLowerCase() === username) {
+        return res.status(400).json({ error: "Password must be 8 to 100 characters and not your username." });
+      }
+      const needCode = inviteRequired();
+      let code = null;
+      if (needCode) {
+        code = checkCode(b.code);
+        if (!code) return res.status(401).json({ error: "That invite code is not valid or has expired." });
+      }
+
+      if (await db.getUser(username)) return res.status(409).json({ error: "That username is taken." });
+
+      if (needCode) {
+        // A code can create only one account.
+        const claimed = await db.cmd("SET", "codeused:" + code.id, username, "NX");
+        if (!claimed) return res.status(409).json({ error: "That invite code has already been used." });
+      }
+
+      const { salt, hash } = await db.hashPassword(password);
+      const user = { name: username, uid: crypto.randomBytes(8).toString("hex"), salt, hash, sv: 1, created: new Date().toISOString(), code: code ? code.id : "" };
+      const created = await db.cmd("SET", "user:" + username, JSON.stringify(user), "NX");
+      if (!created) {
+        if (needCode) await db.cmd("DEL", "codeused:" + code.id); // someone took the name a moment ago: free the code
+        return res.status(409).json({ error: "That username is taken." });
+      }
+      await db.cmd("SADD", "users", username);
+      res.setHeader("Set-Cookie", sessionCookie(user));
+      return res.status(200).json({ ok: true, user: username });
+    }
+
+    if (action === "login") {
+      const username = String(b.username || "").trim().toLowerCase();
+      const password = String(b.password || "");
+      if ((await db.rateHit("rl:login:ip:" + ip, WINDOW)) > 30) {
+        return res.status(429).json({ error: "Too many tries. Wait a few minutes." });
+      }
+      if (NAME_RE.test(username) && (await db.rateHit("rl:login:u:" + username, WINDOW)) > 8) {
+        return res.status(429).json({ error: "Too many tries for this account. Wait 15 minutes." });
+      }
+      const user = NAME_RE.test(username) ? await db.getUser(username) : null;
+      if (!user) {
+        await burnTime(password);
+        return res.status(401).json({ error: "Wrong username or password." });
+      }
+      if (!(await db.verifyPassword(password, user))) {
+        return res.status(401).json({ error: "Wrong username or password." });
+      }
+      await db.cmd("DEL", "rl:login:u:" + username);
+      res.setHeader("Set-Cookie", sessionCookie(user));
+      return res.status(200).json({ ok: true, user: user.name });
+    }
+
+    if (action === "password") {
+      const s = await readSession(req);
+      if (!s) return res.status(401).json({ error: "Sign in first." });
+      if ((await db.rateHit("rl:pw:" + s.user, WINDOW)) > 10) {
+        return res.status(429).json({ error: "Too many tries. Wait a few minutes." });
+      }
+      if (!validPassword(b.newPassword) || String(b.newPassword).toLowerCase() === s.user) {
+        return res.status(400).json({ error: "New password must be 8 to 100 characters and not your username." });
+      }
+      const user = await db.getUser(s.user);
+      if (!user || !(await db.verifyPassword(String(b.oldPassword || ""), user))) {
+        return res.status(401).json({ error: "Your current password is wrong." });
+      }
+      const { salt, hash } = await db.hashPassword(b.newPassword);
+      user.salt = salt; user.hash = hash; user.sv = (user.sv || 1) + 1; // signs out other devices
+      await db.putUser(user);
+      res.setHeader("Set-Cookie", sessionCookie(user));
+      return res.status(200).json({ ok: true });
+    }
+
+    return res.status(400).json({ error: "Bad request" });
   } catch (e) {
-    return res.status(500).json({ error: "Sign-in is not set up yet." });
+    if (e && e.code === "NODB") return res.status(503).json({ error: "Accounts are not set up yet." });
+    return res.status(500).json({ error: "Something went wrong. Try again in a moment." });
+  }
+};
+
+return module.exports;
+})({ exports: {} }, {}, __req);
+
+// ===== messages =====
+__mods["messages"] = (function (module, exports, require) {
+// Direct messages between signed-in members.
+//
+// GET  /api/messages                    -> { inbox: [{user,last,at,unread}], unread }
+// GET  /api/messages?list=members       -> { members: [usernames except you] }
+// GET  /api/messages?with=<username>    -> { user, messages: [{from,text,at}], blocked }  (marks it read)
+// POST /api/messages {action:"send", to, text}
+// POST /api/messages {action:"block"|"unblock", user}
+// POST /api/messages {action:"report", with, note}   -> sends the last messages of that chat to the owner
+
+const crypto = require("crypto");
+const db = require("./_db");
+const { readSession, jsonBody } = require("./_auth");
+
+const NAME_RE = /^[a-z0-9_]{3,20}$/;
+const MAX_TEXT = 1000;
+const KEEP = 500; // messages kept per conversation
+
+function pairKey(a, b) {
+  return "conv:" + [a, b].sort().join(":");
+}
+function clean(s, max) {
+  // keep letters, punctuation and line breaks; drop control characters
+  return String(s == null ? "" : s).replace(/\r/g, "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim().slice(0, max);
+}
+function parse(raw) {
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+module.exports = async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const session = await readSession(req);
+    if (!session) return res.status(401).json({ error: "Sign in to use messages." });
+    const me = session.user;
+
+    if (req.method === "GET") {
+      const q = req.query || {};
+
+      if (q.list === "members") {
+        const names = (await db.cmd("SMEMBERS", "users")) || [];
+        return res.status(200).json({ members: names.filter((n) => n !== me).sort() });
+      }
+
+      if (q.with) {
+        const other = String(q.with).toLowerCase();
+        if (!NAME_RE.test(other)) return res.status(400).json({ error: "Bad username." });
+        const raw = (await db.cmd("LRANGE", pairKey(me, other), -200, -1)) || [];
+        const messages = raw.map(parse).filter(Boolean).map((m) => ({ from: m.from, text: m.text, at: m.at }));
+        const ent = parse(await db.cmd("HGET", "inbox:" + me, other));
+        if (ent && ent.unread) {
+          ent.unread = 0;
+          await db.cmd("HSET", "inbox:" + me, other, JSON.stringify(ent));
+        }
+        const blocked = (await db.cmd("SISMEMBER", "block:" + me, other)) === 1;
+        return res.status(200).json({ user: other, messages, blocked });
+      }
+
+      const flat = (await db.cmd("HGETALL", "inbox:" + me)) || [];
+      const items = [];
+      for (let i = 0; i + 1 < flat.length; i += 2) {
+        const e = parse(flat[i + 1]);
+        if (e) items.push({ user: flat[i], last: e.last || "", at: e.at || "", unread: e.unread || 0 });
+      }
+      items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      const unread = items.reduce((n, i) => n + i.unread, 0);
+      return res.status(200).json({ inbox: items, unread });
+    }
+
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "GET, POST");
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    const b = jsonBody(req);
+    const action = String(b.action || "send");
+
+    if (action === "send") {
+      if ((await db.rateHit("rl:dm:" + me, 600)) > 40) {
+        return res.status(429).json({ error: "You're sending too fast. Wait a few minutes." });
+      }
+      const to = String(b.to || "").trim().toLowerCase();
+      const text = clean(b.text, MAX_TEXT);
+      if (!NAME_RE.test(to) || to === me) return res.status(400).json({ error: "Choose another member to message." });
+      if (!text) return res.status(400).json({ error: "Write a message first." });
+      if (!(await db.getUser(to))) return res.status(404).json({ error: "No member with that username." });
+      if ((await db.cmd("SISMEMBER", "block:" + to, me)) === 1) {
+        return res.status(403).json({ error: "This member isn't accepting messages from you." });
+      }
+      if ((await db.cmd("SISMEMBER", "block:" + me, to)) === 1) {
+        return res.status(403).json({ error: "You blocked this member. Unblock them to send a message." });
+      }
+
+      const at = new Date().toISOString();
+      const key = pairKey(me, to);
+      await db.cmd("RPUSH", key, JSON.stringify({ from: me, text, at }));
+      await db.cmd("LTRIM", key, -KEEP, -1);
+
+      const preview = text.replace(/\s+/g, " ").slice(0, 60);
+      const theirs = parse(await db.cmd("HGET", "inbox:" + to, me)) || {};
+      await db.cmd("HSET", "inbox:" + to, me, JSON.stringify({ last: preview, at, unread: (theirs.unread || 0) + 1 }));
+      await db.cmd("HSET", "inbox:" + me, to, JSON.stringify({ last: preview, at, unread: 0 }));
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === "block" || action === "unblock") {
+      const user = String(b.user || "").trim().toLowerCase();
+      if (!NAME_RE.test(user) || user === me) return res.status(400).json({ error: "Bad username." });
+      await db.cmd(action === "block" ? "SADD" : "SREM", "block:" + me, user);
+      return res.status(200).json({ ok: true, blocked: action === "block" });
+    }
+
+    if (action === "report") {
+      if ((await db.rateHit("rl:report:" + me, 3600)) > 5) {
+        return res.status(429).json({ error: "Too many reports. Try again later." });
+      }
+      const about = String(b.with || "").trim().toLowerCase();
+      if (!NAME_RE.test(about) || about === me) return res.status(400).json({ error: "Bad username." });
+      const raw = (await db.cmd("LRANGE", pairKey(me, about), -20, -1)) || [];
+      const excerpt = raw.map(parse).filter(Boolean).map((m) => ({ from: m.from, text: m.text, at: m.at }));
+      const report = {
+        id: crypto.randomBytes(6).toString("hex"),
+        by: me, about, note: clean(b.note, 300), at: new Date().toISOString(), excerpt,
+      };
+      await db.cmd("RPUSH", "reports", JSON.stringify(report));
+      await db.cmd("LTRIM", "reports", -200, -1);
+      return res.status(200).json({ ok: true });
+    }
+
+    return res.status(400).json({ error: "Bad request" });
+  } catch (e) {
+    if (e && e.code === "NODB") return res.status(503).json({ error: "Messages are not set up yet." });
+    return res.status(500).json({ error: "Something went wrong. Try again in a moment." });
   }
 };
 
@@ -207,9 +536,9 @@ return module.exports;
 
 // ===== members =====
 __mods["members"] = (function (module, exports, require) {
-// Members only (needs the sign-in cookie from /api/join).
-// GET  /api/members  -> { images: [ "/api/member-image?u=...", ... ] } newest first
-// POST /api/members  (raw JPEG bytes) -> saves a private picture
+// Members only (needs an account sign-in).
+// GET  /api/members  -> { user, images: [ {src, by}, ... ] } newest first
+// POST /api/members  (raw JPEG bytes) -> saves a picture under your username (held for review unless sign-up is invite-only)
 
 const { put, list } = require("@vercel/blob");
 const { readSession, readBody, limited } = require("./_auth");
@@ -218,23 +547,27 @@ const MAX_BYTES = 2 * 1024 * 1024;
 
 module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  const session = readSession(req);
-  if (!session) return res.status(401).json({ error: "Sign in with an invite code." });
+  const session = await readSession(req);
+  if (!session) return res.status(401).json({ error: "Sign in to see this." });
 
   if (req.method === "GET") {
     try {
       const { blobs } = await list({ prefix: "members/", limit: 200 });
       blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
       return res.status(200).json({
-        images: blobs.map((b) => "/api/member-image?u=" + encodeURIComponent(b.url)),
+        user: session.user,
+        images: blobs.map((b) => ({
+          src: "/api/member-image?u=" + encodeURIComponent(b.url),
+          by: (b.pathname.split("/")[1] || "").replace(/[^a-z0-9_]/g, ""),
+        })),
       });
     } catch (e) {
-      return res.status(200).json({ images: [] });
+      return res.status(200).json({ user: session.user, images: [] });
     }
   }
 
   if (req.method === "POST") {
-    if (limited("mem:" + session.id, 20, 10 * 60 * 1000)) {
+    if (limited("mem:" + session.user, 20, 10 * 60 * 1000)) {
       return res.status(429).json({ error: "Too many uploads" });
     }
     try {
@@ -243,8 +576,10 @@ module.exports = async function handler(req, res) {
       if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) {
         return res.status(400).json({ error: "Not a JPEG" });
       }
-      await put("members/pic.jpg", buf, { access: "public", contentType: "image/jpeg", addRandomSuffix: true });
-      return res.status(200).json({ ok: true });
+      // With open sign-up, a new picture waits for your approval. With invite-only sign-up it posts straight away.
+      const review = String(process.env.REQUIRE_INVITE || "").toLowerCase() !== "yes";
+      await put((review ? "memberpending/" : "members/") + session.user + "/pic.jpg", buf, { access: "public", contentType: "image/jpeg", addRandomSuffix: true });
+      return res.status(200).json({ ok: true, pending: review });
     } catch (e) {
       if (e && e.code === 413) return res.status(413).json({ error: "Too large" });
       return res.status(500).json({ error: "Upload failed" });
@@ -271,7 +606,7 @@ module.exports = async function handler(req, res) {
     res.setHeader("Allow", "GET");
     return res.status(405).end();
   }
-  if (!readSession(req)) return res.status(401).end();
+  if (!(await readSession(req))) return res.status(401).end();
 
   const u = String(req.query.u || "");
   if (!isMemberBlobUrl(u)) return res.status(400).end();
@@ -422,6 +757,16 @@ const { list, copy, del, put } = require("@vercel/blob");
 const crypto = require("crypto");
 const { newCode, isMemberBlobUrl, jsonBody } = require("./_auth");
 const { listProducts } = require("./_products");
+const db = require("./_db");
+const crypto2 = require("crypto");
+const NAME_RE = /^[a-z0-9_]{3,20}$/;
+const TEMP_CHARS = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function tempPassword() {
+  const b = crypto2.randomBytes(12);
+  let p = "";
+  for (let i = 0; i < 12; i++) p += TEMP_CHARS[b[i] % TEMP_CHARS.length];
+  return p;
+}
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -454,7 +799,8 @@ module.exports = async function handler(req, res) {
   if (!authorized(req)) return res.status(401).send("Unauthorized");
 
   if (req.method === "POST") {
-    const { action, url, days } = jsonBody(req);
+    const b = jsonBody(req);
+    const { action, url, days, username } = b;
     try {
       if (action === "newcode") {
         const d = Number(days);
@@ -492,6 +838,62 @@ module.exports = async function handler(req, res) {
         await put("products/p.json", JSON.stringify(meta), { access: "public", contentType: "application/json", addRandomSuffix: true });
         return res.status(200).json({ ok: true });
       }
+      if (action === "removeuser" && NAME_RE.test(String(username))) {
+        // 1. conversations: delete them and remove this member from the other person's inbox
+        const flat = (await db.cmd("HGETALL", "inbox:" + username)) || [];
+        for (let i = 0; i < flat.length; i += 2) {
+          const other = flat[i];
+          await db.cmd("DEL", "conv:" + [username, other].sort().join(":"));
+          await db.cmd("HDEL", "inbox:" + other, username);
+        }
+        await db.cmd("DEL", "inbox:" + username);
+        await db.cmd("DEL", "block:" + username);
+        // 2. forget them in everyone else's block lists, so a future member with this name starts clean
+        const everyone = (await db.cmd("SMEMBERS", "users")) || [];
+        for (const u of everyone) await db.cmd("SREM", "block:" + u, username);
+        // 3. their pictures
+        try {
+          const mine = (await list({ prefix: "members/" + username + "/", limit: 500 })).blobs;
+          for (const b of mine) await del(b.url);
+          const waiting = (await list({ prefix: "memberpending/" + username + "/", limit: 500 })).blobs;
+          for (const b of waiting) await del(b.url);
+        } catch (e) { /* pictures can still be deleted by hand below */ }
+        // 4. the account itself
+        await db.cmd("DEL", "user:" + username);
+        await db.cmd("SREM", "users", username);
+        return res.status(200).json({ ok: true });
+      }
+      if (action === "dismissreport" && /^[a-f0-9]{12}$/.test(String(b.id || ""))) {
+        const rows = (await db.cmd("LRANGE", "reports", 0, -1)) || [];
+        for (const raw of rows) {
+          try { if (JSON.parse(raw).id === b.id) { await db.cmd("LREM", "reports", 1, raw); break; } } catch (e) { /* skip */ }
+        }
+        return res.status(200).json({ ok: true });
+      }
+      if (action === "resetpw" && NAME_RE.test(String(username))) {
+        const u = await db.getUser(username);
+        if (!u) return res.status(404).json({ error: "No such member." });
+        const temp = tempPassword();
+        const h = await db.hashPassword(temp);
+        u.salt = h.salt; u.hash = h.hash; u.sv = (u.sv || 1) + 1;
+        await db.putUser(u);
+        return res.status(200).json({ temp });
+      }
+      if (action === "approvemember" && isBlobUrlUnder(url, "memberpending")) {
+        const owner = (new URL(url).pathname.split("/")[2] || "").replace(/[^a-z0-9_]/g, "");
+        if (!owner) return res.status(400).json({ error: "Bad request" });
+        await copy(url, "members/" + owner + "/pic.jpg", { access: "public", addRandomSuffix: true });
+        await del(url);
+        return res.status(200).json({ ok: true });
+      }
+      if (action === "deletememberpending" && isBlobUrlUnder(url, "memberpending")) {
+        await del(url);
+        return res.status(200).json({ ok: true });
+      }
+      if (action === "deleteinvite" && isBlobUrlUnder(url, "invites")) {
+        await del(url);
+        return res.status(200).json({ ok: true });
+      }
       if (action === "deleteorder" && isBlobUrlUnder(url, "orders")) {
         await del(url);
         return res.status(200).json({ ok: true });
@@ -517,6 +919,8 @@ module.exports = async function handler(req, res) {
 
   const pending = (await list({ prefix: "pending/", limit: 200 })).blobs;
   pending.sort((a, b) => new Date(a.uploadedAt) - new Date(b.uploadedAt));
+  const memberPending = (await list({ prefix: "memberpending/", limit: 200 })).blobs;
+  memberPending.sort((a, b) => new Date(a.uploadedAt) - new Date(b.uploadedAt));
   const members = (await list({ prefix: "members/", limit: 200 })).blobs;
   members.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
   const key = encodeURIComponent(req.query.key);
@@ -537,6 +941,59 @@ module.exports = async function handler(req, res) {
     }))).filter(Boolean);
   } catch (e) { orders = []; }
 
+  let invites = [];
+  try {
+    const ib = (await list({ prefix: "invites/", limit: 200 })).blobs
+      .filter((b) => b.pathname.endsWith(".json"))
+      .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+    invites = (await Promise.all(ib.map(async (b) => {
+      try {
+        const r = await fetch(b.url);
+        if (!r.ok) return null;
+        return Object.assign(await r.json(), { id: b.url });
+      } catch (e) { return null; }
+    }))).filter(Boolean);
+  } catch (e) { invites = []; }
+
+  const inviteCard = (i) => `<div class="c" data-url="${esc(i.id)}" data-kind="invite" data-email="${esc(i.email)}">
+      <div><strong><a href="mailto:${esc(i.email)}">${esc(i.email)}</a></strong><br><small>${esc(String(i.at || "").slice(0, 16).replace("T", " "))} UTC</small></div>
+      <div><button class="mk">Create code</button><button class="no">Delete</button></div>
+      <div class="ic" style="margin-top:8px"></div>
+    </div>`;
+
+  let users = [];
+  let dbOk = true;
+  try {
+    const names = await db.cmd("SMEMBERS", "users");
+    if (names && names.length) {
+      const raws = await db.cmd("MGET", ...names.map((n) => "user:" + n));
+      users = raws.filter(Boolean).map((r) => JSON.parse(r)).sort((a, b) => String(b.created).localeCompare(String(a.created)));
+    }
+  } catch (e) { dbOk = false; }
+
+  const userCard = (u) => `<div class="c" data-kind="user" data-user="${esc(u.name)}">
+      <div><strong>@${esc(u.name)}</strong><br><small>Joined ${esc(String(u.created || "").slice(0, 10))}</small></div>
+      <div><button class="rp">Reset password</button><button class="no">Remove</button></div>
+      <div class="tp" style="font-family:ui-monospace,monospace;font-size:1.05rem;margin-top:8px;user-select:all"></div>
+    </div>`;
+
+  let reports = [];
+  try {
+    reports = ((await db.cmd("LRANGE", "reports", 0, -1)) || [])
+      .map((r) => { try { return JSON.parse(r); } catch (e) { return null; } })
+      .filter(Boolean)
+      .reverse();
+  } catch (e) { reports = []; }
+
+  const reportCard = (r) => `<div class="c" data-kind="report" data-id="${esc(r.id)}" data-about="${esc(r.about)}">
+      <div><strong>@${esc(r.by)} reported @${esc(r.about)}</strong><br><small>${esc(String(r.at || "").slice(0, 16).replace("T", " "))} UTC</small></div>
+      ${r.note ? "<p><i>" + esc(r.note) + "</i></p>" : ""}
+      <div style="font-size:.9rem;background:#f3f4f8;border-radius:8px;padding:8px;max-height:220px;overflow:auto">${
+        (r.excerpt || []).map((m) => "<div><b>@" + esc(m.from) + ":</b> " + esc(m.text) + "</div>").join("") || "<i>No messages</i>"
+      }</div>
+      <div><button class="no rm">Remove @${esc(r.about)}</button><button class="dm">Dismiss</button></div>
+    </div>`;
+
   const orderCard = (o) => {
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(o.contact || "");
     const contact = isEmail ? `<a href="mailto:${esc(o.contact)}">${esc(o.contact)}</a>` : esc(o.contact);
@@ -556,7 +1013,8 @@ module.exports = async function handler(req, res) {
 
   const card = (b, kind) => `<div class="c" data-url="${b.url}" data-kind="${kind}">
       <img src="${b.url}" alt="Picture to review" loading="lazy">
-      <div>${kind === "pending" ? '<button class="ok">Approve</button>' : ""}<button class="no">Delete</button></div>
+      ${kind === "member" || kind === "memberpending" ? "<small>Posted by @" + esc((b.pathname.split("/")[1] || "")) + "</small>" : ""}
+      <div>${kind === "pending" || kind === "memberpending" ? '<button class="ok">Approve</button>' : ""}<button class="no">Delete</button></div>
     </div>`;
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -579,6 +1037,19 @@ module.exports = async function handler(req, res) {
   #codes div{font-family:ui-monospace,monospace;font-size:1.1rem;margin:8px 0;user-select:all}
 </style></head><body>
 <h1>Orbweave admin</h1>
+
+<h2>Invite requests (${invites.length})</h2>
+<p>People who asked for an invite from the home page. Press Create code to make a 30-day code for them, then press the email link to send it. Delete the request afterwards so their email doesn't pile up.</p>
+<div class="g">${invites.map(inviteCard).join("") || "<p>No invite requests yet.</p>"}</div>
+
+<h2>Reported conversations (${reports.length})</h2>
+<p>Members can report a conversation. You only see the last 20 messages of a reported chat, nothing else. Remove the member to delete their account, pictures and messages, or dismiss the report.</p>
+<div class="g">${reports.map(reportCard).join("") || "<p>No reports.</p>"}</div>
+
+<h2>Members (${users.length})</h2>
+${dbOk ? "" : "<p><strong>The member database is not connected yet.</strong> In Vercel, open Storage, create an Upstash Redis database and connect it to this project, then redeploy.</p>"}
+<p>Members create their own account with an invite code. If someone forgets their password, press Reset password, then send them the temporary password shown. They can change it after signing in. Remove deletes the account and signs them out everywhere.</p>
+<div class="g">${users.map(userCard).join("") || "<p>No members yet.</p>"}</div>
 
 <h2>Orders and messages (${orders.length})</h2>
 <p>People who tapped "I want this" on a product. Reply to them using the contact they left, then delete the request when you're done so their details don't pile up.</p>
@@ -604,8 +1075,8 @@ module.exports = async function handler(req, res) {
 
 <h2>Invite codes</h2>
 <div class="box">
-  <p>Make a code, then email it to the person you are inviting. Each code works for many sign-ins until it expires, so share it with one person only. To block a code early, add its first 6 letters to the REVOKED_CODES setting in Vercel and redeploy.</p>
-  <label>Valid for <select id="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></label>
+  <p>Sign-up is open right now, so codes are not needed. They only matter if you turn invite-only sign-up back on by adding a REQUIRE_INVITE setting with the value yes in Vercel and redeploying. Then: make a code, then email it to the person you are inviting. Each code creates one account and then stops working. A member only needs the code once, to sign up. To block an unused code early, add its first 6 letters to the REVOKED_CODES setting in Vercel and redeploy.</p>
+  <label>Code works for <select id="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></label>
   <button id="mk">Create code</button>
   <div id="codes" aria-live="polite"></div>
 </div>
@@ -613,6 +1084,10 @@ module.exports = async function handler(req, res) {
 <h2>Wall pictures waiting for review (${pending.length})</h2>
 <p>Look at each picture at full size before approving. Delete anything unsafe, illegal, or showing people who may not have agreed.</p>
 <div class="g">${pending.map((b) => card(b, "pending")).join("") || "<p>Nothing waiting for review.</p>"}</div>
+
+<h2>Member pictures waiting for review (${memberPending.length})</h2>
+<p>Pictures members posted. Look at each at full size. Approve to show it to the other members, or delete anything unsafe, illegal, or showing people who may not have agreed.</p>
+<div class="g">${memberPending.map((b) => card(b, "memberpending")).join("") || "<p>Nothing waiting.</p>"}</div>
 
 <h2>Member pictures (${members.length})</h2>
 <p>Members post these without review, so check them from time to time and delete anything that breaks your rules.</p>
@@ -658,12 +1133,58 @@ document.getElementById("mk").onclick=function(){
 };
 document.querySelectorAll(".c").forEach(function(card){
   var kind=card.dataset.kind;
+  if(kind==="invite"){
+    var em=card.dataset.email;
+    card.querySelector(".mk").onclick=function(){
+      post({action:"newcode",days:30}).then(function(r){
+        var box=card.querySelector(".ic"); box.textContent="";
+        var code=document.createElement("div"); code.style.cssText="font-family:ui-monospace,monospace;user-select:all;word-break:break-all"; code.textContent=r.code; box.appendChild(code);
+        var a=document.createElement("a");
+        var body="Hi,\\n\\nHere is your Orbweave invite code (valid 30 days):\\n\\n"+r.code+"\\n\\nCreate your account at "+location.origin+"/members.html\\n";
+        a.href="mailto:"+em+"?subject="+encodeURIComponent("Your Orbweave invite")+"&body="+encodeURIComponent(body);
+        a.textContent="Email this code to them"; a.style.display="inline-block"; a.style.marginTop="6px"; box.appendChild(a);
+      }).catch(function(){ alert("Could not create a code. Check that SESSION_SECRET is set."); });
+    };
+    card.querySelector(".no").onclick=function(){
+      post({action:"deleteinvite",url:card.dataset.url}).then(function(){ card.remove(); })
+        .catch(function(){ alert("That did not work. Reload and try again."); });
+    };
+    return;
+  }
+  if(kind==="report"){
+    var rid=card.dataset.id, about=card.dataset.about;
+    card.querySelector(".dm").onclick=function(){
+      post({action:"dismissreport",id:rid}).then(function(){ card.remove(); })
+        .catch(function(){ alert("That did not work. Reload and try again."); });
+    };
+    card.querySelector(".rm").onclick=function(){
+      if(!confirm("Remove "+about+"? This deletes their account, pictures and messages.")) return;
+      post({action:"removeuser",username:about}).then(function(){ return post({action:"dismissreport",id:rid}); })
+        .then(function(){ card.remove(); })
+        .catch(function(){ alert("That did not work. Reload and try again."); });
+    };
+    return;
+  }
+  if(kind==="user"){
+    var uname=card.dataset.user;
+    card.querySelector(".rp").onclick=function(){
+      if(!confirm("Reset the password for "+uname+"? Their old password will stop working.")) return;
+      post({action:"resetpw",username:uname}).then(function(r){ card.querySelector(".tp").textContent="Temporary password: "+r.temp; })
+        .catch(function(){ alert("Could not reset. Reload and try again."); });
+    };
+    card.querySelector(".no").onclick=function(){
+      if(!confirm("Remove "+uname+"? This deletes their account and signs them out.")) return;
+      post({action:"removeuser",username:uname}).then(function(){ card.remove(); })
+        .catch(function(){ alert("Could not remove. Reload and try again."); });
+    };
+    return;
+  }
   function act(action){
     post({action:action,url:card.dataset.url}).then(function(){ card.remove(); })
       .catch(function(){ alert("That did not work. Reload and try again."); });
   }
-  var ok=card.querySelector(".ok"); if(ok) ok.onclick=function(){act("approve")};
-  card.querySelector(".no").onclick=function(){act(kind==="pending"?"delete":kind==="product"?"deleteproduct":kind==="order"?"deleteorder":"deletemember")};
+  var ok=card.querySelector(".ok"); if(ok) ok.onclick=function(){act(kind==="memberpending"?"approvemember":"approve")};
+  card.querySelector(".no").onclick=function(){act(kind==="pending"?"delete":kind==="memberpending"?"deletememberpending":kind==="product"?"deleteproduct":kind==="order"?"deleteorder":kind==="invite"?"deleteinvite":"deletemember")};
 });
 </script></body></html>`);
 };
@@ -673,22 +1194,21 @@ return module.exports;
 
 // ===== invite =====
 __mods["invite"] = (function (module, exports, require) {
-// Vercel serverless function: receives an invite request and emails it to you.
-// Nothing is stored on a server or database; the request lives only in your inbox.
-//
-// Required environment variables (Vercel > Project > Settings > Environment Variables):
-//   RESEND_API_KEY   your key from resend.com
-//   INVITE_TO_EMAIL  the inbox that should receive requests
-// Optional:
-//   INVITE_FROM_EMAIL  defaults to Resend's test sender (only delivers to your own Resend account email)
+// POST /api/invite  {email, website}
+// Saves the invite request so it shows on your admin page. If RESEND_API_KEY and
+// INVITE_TO_EMAIL are set, it is also emailed to you (optional).
+
+const { put } = require("@vercel/blob");
+const { jsonBody, limited, clientIp } = require("./_auth");
 
 module.exports = async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const body = typeof req.body === "string" ? safeParse(req.body) : req.body || {};
+  const body = jsonBody(req);
   const email = String(body.email || "").trim();
 
   // Spam trap: real people never fill this hidden field. Pretend success.
@@ -697,35 +1217,41 @@ module.exports = async function handler(req, res) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     return res.status(400).json({ error: "Enter a valid email address." });
   }
+  if (limited("invite:" + clientIp(req), 5, 10 * 60 * 1000)) {
+    return res.status(429).json({ error: "Too many requests. Try again later." });
+  }
 
+  let saved = false;
+  try {
+    await put("invites/i.json", JSON.stringify({ email, at: new Date().toISOString() }), {
+      access: "public", contentType: "application/json", addRandomSuffix: true,
+    });
+    saved = true;
+  } catch (e) { /* try email below */ }
+
+  let emailed = false;
   const key = process.env.RESEND_API_KEY;
   const to = process.env.INVITE_TO_EMAIL;
-  if (!key || !to) {
-    return res.status(500).json({ error: "Server is not configured." });
+  if (key && to) {
+    try {
+      const r = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: process.env.INVITE_FROM_EMAIL || "Orbweave <onboarding@resend.dev>",
+          to: [to],
+          reply_to: email,
+          subject: "New Orbweave invite request",
+          text: `Invite request from: ${email}\n\nCreate a code on your admin page and email it to them, then delete the request.`,
+        }),
+      });
+      emailed = r.ok;
+    } catch (e) { /* ignore */ }
   }
 
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: process.env.INVITE_FROM_EMAIL || "Orbweave <onboarding@resend.dev>",
-        to: [to],
-        reply_to: email,
-        subject: "New Orbweave invite request",
-        text: `Invite request from: ${email}\n\nReply to this email to send their invite, then delete this message.`,
-      }),
-    });
-    if (!r.ok) return res.status(502).json({ error: "Could not send request." });
-    return res.status(200).json({ ok: true });
-  } catch (e) {
-    return res.status(502).json({ error: "Could not send request." });
-  }
+  if (!saved && !emailed) return res.status(502).json({ error: "Could not send request." });
+  return res.status(200).json({ ok: true });
 };
-
-function safeParse(s) {
-  try { return JSON.parse(s); } catch (e) { return {}; }
-}
 
 return module.exports;
 })({ exports: {} }, {}, __req);
@@ -798,7 +1324,7 @@ return module.exports;
 })({ exports: {} }, {}, __req);
 
 const __routes = {
-  join: __mods.join, members: __mods.members, "member-image": __mods["member-image"],
+  account: __mods.account, messages: __mods.messages, members: __mods.members, "member-image": __mods["member-image"],
   products: __mods.products, upload: __mods.upload, wall: __mods.wall, admin: __mods.admin,
   invite: __mods.invite, order: __mods.order,
 };
