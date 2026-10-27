@@ -142,7 +142,7 @@ function checkCode(raw) {
 const SESSION_DAYS = 90;
 
 function sessionCookie(user) {
-  const payload = Buffer.from(JSON.stringify({ u: user.name, sv: user.sv, exp: Date.now() + SESSION_DAYS * DAY })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ u: user.name, id: user.uid || "", sv: user.sv, exp: Date.now() + SESSION_DAYS * DAY })).toString("base64url");
   const token = payload + "." + hmac("sess:" + payload);
   return `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${SESSION_DAYS * 86400}`;
 }
@@ -162,7 +162,7 @@ async function readSession(req) {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString());
     if (!data.exp || data.exp < Date.now() || !data.u) return null;
     const user = await db.getUser(String(data.u));
-    if (!user || user.sv !== data.sv) return null;
+    if (!user || user.sv !== data.sv || (user.uid || "") !== (data.id || "")) return null; // uid stops an old sign-in from working on a new account that reuses a removed username
     return { user: user.name };
   } catch (e) {
     return null;
@@ -251,13 +251,18 @@ return module.exports;
 // ===== account =====
 __mods["account"] = (function (module, exports, require) {
 // GET  /api/account                          -> { user } if signed in, else 401
+// GET  /api/account?info=1                   -> { inviteRequired } (public)
 // POST /api/account {action:"signup", username, password, code}
 // POST /api/account {action:"login", username, password}
 // POST /api/account {action:"logout"}
 // POST /api/account {action:"password", oldPassword, newPassword}
 
 const { checkCode, sessionCookie, clearCookie, readSession, jsonBody, clientIp } = require("./_auth");
+const crypto = require("crypto");
 const db = require("./_db");
+
+// Sign-up is open by default. Set the environment variable REQUIRE_INVITE to "yes" to require an invite code again.
+function inviteRequired() { return String(process.env.REQUIRE_INVITE || "").toLowerCase() === "yes"; }
 
 const NAME_RE = /^[a-z0-9_]{3,20}$/;
 const WINDOW = 15 * 60; // seconds
@@ -276,6 +281,7 @@ module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   try {
     if (req.method === "GET") {
+      if (req.query && req.query.info) return res.status(200).json({ inviteRequired: inviteRequired() });
       const s = await readSession(req);
       if (!s) return res.status(401).json({ error: "Not signed in." });
       return res.status(200).json({ user: s.user });
@@ -295,8 +301,11 @@ module.exports = async function handler(req, res) {
     }
 
     if (action === "signup") {
-      if ((await db.rateHit("rl:signup:" + ip, WINDOW)) > 10) {
-        return res.status(429).json({ error: "Too many tries. Wait a few minutes." });
+      // Spam trap: real people never fill this hidden field.
+      if (b.website) return res.status(400).json({ error: "Could not create the account." });
+      // 5 new accounts per hour per connection.
+      if ((await db.rateHit("rl:signup:" + ip, 3600)) > 5) {
+        return res.status(429).json({ error: "Too many sign-ups from this connection. Try again later." });
       }
       const username = String(b.username || "").trim().toLowerCase();
       const password = b.password;
@@ -306,20 +315,26 @@ module.exports = async function handler(req, res) {
       if (!validPassword(password) || password.toLowerCase() === username) {
         return res.status(400).json({ error: "Password must be 8 to 100 characters and not your username." });
       }
-      const code = checkCode(b.code);
-      if (!code) return res.status(401).json({ error: "That invite code is not valid or has expired." });
+      const needCode = inviteRequired();
+      let code = null;
+      if (needCode) {
+        code = checkCode(b.code);
+        if (!code) return res.status(401).json({ error: "That invite code is not valid or has expired." });
+      }
 
       if (await db.getUser(username)) return res.status(409).json({ error: "That username is taken." });
 
-      // A code can create only one account.
-      const claimed = await db.cmd("SET", "codeused:" + code.id, username, "NX");
-      if (!claimed) return res.status(409).json({ error: "That invite code has already been used." });
+      if (needCode) {
+        // A code can create only one account.
+        const claimed = await db.cmd("SET", "codeused:" + code.id, username, "NX");
+        if (!claimed) return res.status(409).json({ error: "That invite code has already been used." });
+      }
 
       const { salt, hash } = await db.hashPassword(password);
-      const user = { name: username, salt, hash, sv: 1, created: new Date().toISOString(), code: code.id };
+      const user = { name: username, uid: crypto.randomBytes(8).toString("hex"), salt, hash, sv: 1, created: new Date().toISOString(), code: code ? code.id : "" };
       const created = await db.cmd("SET", "user:" + username, JSON.stringify(user), "NX");
       if (!created) {
-        await db.cmd("DEL", "codeused:" + code.id); // someone took the name a moment ago: free the code
+        if (needCode) await db.cmd("DEL", "codeused:" + code.id); // someone took the name a moment ago: free the code
         return res.status(409).json({ error: "That username is taken." });
       }
       await db.cmd("SADD", "users", username);
@@ -379,11 +394,151 @@ module.exports = async function handler(req, res) {
 return module.exports;
 })({ exports: {} }, {}, __req);
 
+// ===== messages =====
+__mods["messages"] = (function (module, exports, require) {
+// Direct messages between signed-in members.
+//
+// GET  /api/messages                    -> { inbox: [{user,last,at,unread}], unread }
+// GET  /api/messages?list=members       -> { members: [usernames except you] }
+// GET  /api/messages?with=<username>    -> { user, messages: [{from,text,at}], blocked }  (marks it read)
+// POST /api/messages {action:"send", to, text}
+// POST /api/messages {action:"block"|"unblock", user}
+// POST /api/messages {action:"report", with, note}   -> sends the last messages of that chat to the owner
+
+const crypto = require("crypto");
+const db = require("./_db");
+const { readSession, jsonBody } = require("./_auth");
+
+const NAME_RE = /^[a-z0-9_]{3,20}$/;
+const MAX_TEXT = 1000;
+const KEEP = 500; // messages kept per conversation
+
+function pairKey(a, b) {
+  return "conv:" + [a, b].sort().join(":");
+}
+function clean(s, max) {
+  // keep letters, punctuation and line breaks; drop control characters
+  return String(s == null ? "" : s).replace(/\r/g, "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim().slice(0, max);
+}
+function parse(raw) {
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+module.exports = async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const session = await readSession(req);
+    if (!session) return res.status(401).json({ error: "Sign in to use messages." });
+    const me = session.user;
+
+    if (req.method === "GET") {
+      const q = req.query || {};
+
+      if (q.list === "members") {
+        const names = (await db.cmd("SMEMBERS", "users")) || [];
+        return res.status(200).json({ members: names.filter((n) => n !== me).sort() });
+      }
+
+      if (q.with) {
+        const other = String(q.with).toLowerCase();
+        if (!NAME_RE.test(other)) return res.status(400).json({ error: "Bad username." });
+        const raw = (await db.cmd("LRANGE", pairKey(me, other), -200, -1)) || [];
+        const messages = raw.map(parse).filter(Boolean).map((m) => ({ from: m.from, text: m.text, at: m.at }));
+        const ent = parse(await db.cmd("HGET", "inbox:" + me, other));
+        if (ent && ent.unread) {
+          ent.unread = 0;
+          await db.cmd("HSET", "inbox:" + me, other, JSON.stringify(ent));
+        }
+        const blocked = (await db.cmd("SISMEMBER", "block:" + me, other)) === 1;
+        return res.status(200).json({ user: other, messages, blocked });
+      }
+
+      const flat = (await db.cmd("HGETALL", "inbox:" + me)) || [];
+      const items = [];
+      for (let i = 0; i + 1 < flat.length; i += 2) {
+        const e = parse(flat[i + 1]);
+        if (e) items.push({ user: flat[i], last: e.last || "", at: e.at || "", unread: e.unread || 0 });
+      }
+      items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      const unread = items.reduce((n, i) => n + i.unread, 0);
+      return res.status(200).json({ inbox: items, unread });
+    }
+
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "GET, POST");
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    const b = jsonBody(req);
+    const action = String(b.action || "send");
+
+    if (action === "send") {
+      if ((await db.rateHit("rl:dm:" + me, 600)) > 40) {
+        return res.status(429).json({ error: "You're sending too fast. Wait a few minutes." });
+      }
+      const to = String(b.to || "").trim().toLowerCase();
+      const text = clean(b.text, MAX_TEXT);
+      if (!NAME_RE.test(to) || to === me) return res.status(400).json({ error: "Choose another member to message." });
+      if (!text) return res.status(400).json({ error: "Write a message first." });
+      if (!(await db.getUser(to))) return res.status(404).json({ error: "No member with that username." });
+      if ((await db.cmd("SISMEMBER", "block:" + to, me)) === 1) {
+        return res.status(403).json({ error: "This member isn't accepting messages from you." });
+      }
+      if ((await db.cmd("SISMEMBER", "block:" + me, to)) === 1) {
+        return res.status(403).json({ error: "You blocked this member. Unblock them to send a message." });
+      }
+
+      const at = new Date().toISOString();
+      const key = pairKey(me, to);
+      await db.cmd("RPUSH", key, JSON.stringify({ from: me, text, at }));
+      await db.cmd("LTRIM", key, -KEEP, -1);
+
+      const preview = text.replace(/\s+/g, " ").slice(0, 60);
+      const theirs = parse(await db.cmd("HGET", "inbox:" + to, me)) || {};
+      await db.cmd("HSET", "inbox:" + to, me, JSON.stringify({ last: preview, at, unread: (theirs.unread || 0) + 1 }));
+      await db.cmd("HSET", "inbox:" + me, to, JSON.stringify({ last: preview, at, unread: 0 }));
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === "block" || action === "unblock") {
+      const user = String(b.user || "").trim().toLowerCase();
+      if (!NAME_RE.test(user) || user === me) return res.status(400).json({ error: "Bad username." });
+      await db.cmd(action === "block" ? "SADD" : "SREM", "block:" + me, user);
+      return res.status(200).json({ ok: true, blocked: action === "block" });
+    }
+
+    if (action === "report") {
+      if ((await db.rateHit("rl:report:" + me, 3600)) > 5) {
+        return res.status(429).json({ error: "Too many reports. Try again later." });
+      }
+      const about = String(b.with || "").trim().toLowerCase();
+      if (!NAME_RE.test(about) || about === me) return res.status(400).json({ error: "Bad username." });
+      const raw = (await db.cmd("LRANGE", pairKey(me, about), -20, -1)) || [];
+      const excerpt = raw.map(parse).filter(Boolean).map((m) => ({ from: m.from, text: m.text, at: m.at }));
+      const report = {
+        id: crypto.randomBytes(6).toString("hex"),
+        by: me, about, note: clean(b.note, 300), at: new Date().toISOString(), excerpt,
+      };
+      await db.cmd("RPUSH", "reports", JSON.stringify(report));
+      await db.cmd("LTRIM", "reports", -200, -1);
+      return res.status(200).json({ ok: true });
+    }
+
+    return res.status(400).json({ error: "Bad request" });
+  } catch (e) {
+    if (e && e.code === "NODB") return res.status(503).json({ error: "Messages are not set up yet." });
+    return res.status(500).json({ error: "Something went wrong. Try again in a moment." });
+  }
+};
+
+return module.exports;
+})({ exports: {} }, {}, __req);
+
 // ===== members =====
 __mods["members"] = (function (module, exports, require) {
 // Members only (needs an account sign-in).
 // GET  /api/members  -> { user, images: [ {src, by}, ... ] } newest first
-// POST /api/members  (raw JPEG bytes) -> saves a private picture under your username
+// POST /api/members  (raw JPEG bytes) -> saves a picture under your username (held for review unless sign-up is invite-only)
 
 const { put, list } = require("@vercel/blob");
 const { readSession, readBody, limited } = require("./_auth");
@@ -421,8 +576,10 @@ module.exports = async function handler(req, res) {
       if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) {
         return res.status(400).json({ error: "Not a JPEG" });
       }
-      await put("members/" + session.user + "/pic.jpg", buf, { access: "public", contentType: "image/jpeg", addRandomSuffix: true });
-      return res.status(200).json({ ok: true });
+      // With open sign-up, a new picture waits for your approval. With invite-only sign-up it posts straight away.
+      const review = String(process.env.REQUIRE_INVITE || "").toLowerCase() !== "yes";
+      await put((review ? "memberpending/" : "members/") + session.user + "/pic.jpg", buf, { access: "public", contentType: "image/jpeg", addRandomSuffix: true });
+      return res.status(200).json({ ok: true, pending: review });
     } catch (e) {
       if (e && e.code === 413) return res.status(413).json({ error: "Too large" });
       return res.status(500).json({ error: "Upload failed" });
@@ -642,7 +799,8 @@ module.exports = async function handler(req, res) {
   if (!authorized(req)) return res.status(401).send("Unauthorized");
 
   if (req.method === "POST") {
-    const { action, url, days, username } = jsonBody(req);
+    const b = jsonBody(req);
+    const { action, url, days, username } = b;
     try {
       if (action === "newcode") {
         const d = Number(days);
@@ -681,8 +839,35 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
       if (action === "removeuser" && NAME_RE.test(String(username))) {
+        // 1. conversations: delete them and remove this member from the other person's inbox
+        const flat = (await db.cmd("HGETALL", "inbox:" + username)) || [];
+        for (let i = 0; i < flat.length; i += 2) {
+          const other = flat[i];
+          await db.cmd("DEL", "conv:" + [username, other].sort().join(":"));
+          await db.cmd("HDEL", "inbox:" + other, username);
+        }
+        await db.cmd("DEL", "inbox:" + username);
+        await db.cmd("DEL", "block:" + username);
+        // 2. forget them in everyone else's block lists, so a future member with this name starts clean
+        const everyone = (await db.cmd("SMEMBERS", "users")) || [];
+        for (const u of everyone) await db.cmd("SREM", "block:" + u, username);
+        // 3. their pictures
+        try {
+          const mine = (await list({ prefix: "members/" + username + "/", limit: 500 })).blobs;
+          for (const b of mine) await del(b.url);
+          const waiting = (await list({ prefix: "memberpending/" + username + "/", limit: 500 })).blobs;
+          for (const b of waiting) await del(b.url);
+        } catch (e) { /* pictures can still be deleted by hand below */ }
+        // 4. the account itself
         await db.cmd("DEL", "user:" + username);
         await db.cmd("SREM", "users", username);
+        return res.status(200).json({ ok: true });
+      }
+      if (action === "dismissreport" && /^[a-f0-9]{12}$/.test(String(b.id || ""))) {
+        const rows = (await db.cmd("LRANGE", "reports", 0, -1)) || [];
+        for (const raw of rows) {
+          try { if (JSON.parse(raw).id === b.id) { await db.cmd("LREM", "reports", 1, raw); break; } } catch (e) { /* skip */ }
+        }
         return res.status(200).json({ ok: true });
       }
       if (action === "resetpw" && NAME_RE.test(String(username))) {
@@ -693,6 +878,17 @@ module.exports = async function handler(req, res) {
         u.salt = h.salt; u.hash = h.hash; u.sv = (u.sv || 1) + 1;
         await db.putUser(u);
         return res.status(200).json({ temp });
+      }
+      if (action === "approvemember" && isBlobUrlUnder(url, "memberpending")) {
+        const owner = (new URL(url).pathname.split("/")[2] || "").replace(/[^a-z0-9_]/g, "");
+        if (!owner) return res.status(400).json({ error: "Bad request" });
+        await copy(url, "members/" + owner + "/pic.jpg", { access: "public", addRandomSuffix: true });
+        await del(url);
+        return res.status(200).json({ ok: true });
+      }
+      if (action === "deletememberpending" && isBlobUrlUnder(url, "memberpending")) {
+        await del(url);
+        return res.status(200).json({ ok: true });
       }
       if (action === "deleteinvite" && isBlobUrlUnder(url, "invites")) {
         await del(url);
@@ -723,6 +919,8 @@ module.exports = async function handler(req, res) {
 
   const pending = (await list({ prefix: "pending/", limit: 200 })).blobs;
   pending.sort((a, b) => new Date(a.uploadedAt) - new Date(b.uploadedAt));
+  const memberPending = (await list({ prefix: "memberpending/", limit: 200 })).blobs;
+  memberPending.sort((a, b) => new Date(a.uploadedAt) - new Date(b.uploadedAt));
   const members = (await list({ prefix: "members/", limit: 200 })).blobs;
   members.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
   const key = encodeURIComponent(req.query.key);
@@ -779,6 +977,23 @@ module.exports = async function handler(req, res) {
       <div class="tp" style="font-family:ui-monospace,monospace;font-size:1.05rem;margin-top:8px;user-select:all"></div>
     </div>`;
 
+  let reports = [];
+  try {
+    reports = ((await db.cmd("LRANGE", "reports", 0, -1)) || [])
+      .map((r) => { try { return JSON.parse(r); } catch (e) { return null; } })
+      .filter(Boolean)
+      .reverse();
+  } catch (e) { reports = []; }
+
+  const reportCard = (r) => `<div class="c" data-kind="report" data-id="${esc(r.id)}" data-about="${esc(r.about)}">
+      <div><strong>@${esc(r.by)} reported @${esc(r.about)}</strong><br><small>${esc(String(r.at || "").slice(0, 16).replace("T", " "))} UTC</small></div>
+      ${r.note ? "<p><i>" + esc(r.note) + "</i></p>" : ""}
+      <div style="font-size:.9rem;background:#f3f4f8;border-radius:8px;padding:8px;max-height:220px;overflow:auto">${
+        (r.excerpt || []).map((m) => "<div><b>@" + esc(m.from) + ":</b> " + esc(m.text) + "</div>").join("") || "<i>No messages</i>"
+      }</div>
+      <div><button class="no rm">Remove @${esc(r.about)}</button><button class="dm">Dismiss</button></div>
+    </div>`;
+
   const orderCard = (o) => {
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(o.contact || "");
     const contact = isEmail ? `<a href="mailto:${esc(o.contact)}">${esc(o.contact)}</a>` : esc(o.contact);
@@ -798,8 +1013,8 @@ module.exports = async function handler(req, res) {
 
   const card = (b, kind) => `<div class="c" data-url="${b.url}" data-kind="${kind}">
       <img src="${b.url}" alt="Picture to review" loading="lazy">
-      ${kind === "member" ? "<small>Posted by @" + esc((b.pathname.split("/")[1] || "")) + "</small>" : ""}
-      <div>${kind === "pending" ? '<button class="ok">Approve</button>' : ""}<button class="no">Delete</button></div>
+      ${kind === "member" || kind === "memberpending" ? "<small>Posted by @" + esc((b.pathname.split("/")[1] || "")) + "</small>" : ""}
+      <div>${kind === "pending" || kind === "memberpending" ? '<button class="ok">Approve</button>' : ""}<button class="no">Delete</button></div>
     </div>`;
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -826,6 +1041,10 @@ module.exports = async function handler(req, res) {
 <h2>Invite requests (${invites.length})</h2>
 <p>People who asked for an invite from the home page. Press Create code to make a 30-day code for them, then press the email link to send it. Delete the request afterwards so their email doesn't pile up.</p>
 <div class="g">${invites.map(inviteCard).join("") || "<p>No invite requests yet.</p>"}</div>
+
+<h2>Reported conversations (${reports.length})</h2>
+<p>Members can report a conversation. You only see the last 20 messages of a reported chat, nothing else. Remove the member to delete their account, pictures and messages, or dismiss the report.</p>
+<div class="g">${reports.map(reportCard).join("") || "<p>No reports.</p>"}</div>
 
 <h2>Members (${users.length})</h2>
 ${dbOk ? "" : "<p><strong>The member database is not connected yet.</strong> In Vercel, open Storage, create an Upstash Redis database and connect it to this project, then redeploy.</p>"}
@@ -856,7 +1075,7 @@ ${dbOk ? "" : "<p><strong>The member database is not connected yet.</strong> In 
 
 <h2>Invite codes</h2>
 <div class="box">
-  <p>Make a code, then email it to the person you are inviting. Each code creates one account and then stops working. A member only needs the code once, to sign up. To block an unused code early, add its first 6 letters to the REVOKED_CODES setting in Vercel and redeploy.</p>
+  <p>Sign-up is open right now, so codes are not needed. They only matter if you turn invite-only sign-up back on by adding a REQUIRE_INVITE setting with the value yes in Vercel and redeploying. Then: make a code, then email it to the person you are inviting. Each code creates one account and then stops working. A member only needs the code once, to sign up. To block an unused code early, add its first 6 letters to the REVOKED_CODES setting in Vercel and redeploy.</p>
   <label>Code works for <select id="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></label>
   <button id="mk">Create code</button>
   <div id="codes" aria-live="polite"></div>
@@ -865,6 +1084,10 @@ ${dbOk ? "" : "<p><strong>The member database is not connected yet.</strong> In 
 <h2>Wall pictures waiting for review (${pending.length})</h2>
 <p>Look at each picture at full size before approving. Delete anything unsafe, illegal, or showing people who may not have agreed.</p>
 <div class="g">${pending.map((b) => card(b, "pending")).join("") || "<p>Nothing waiting for review.</p>"}</div>
+
+<h2>Member pictures waiting for review (${memberPending.length})</h2>
+<p>Pictures members posted. Look at each at full size. Approve to show it to the other members, or delete anything unsafe, illegal, or showing people who may not have agreed.</p>
+<div class="g">${memberPending.map((b) => card(b, "memberpending")).join("") || "<p>Nothing waiting.</p>"}</div>
 
 <h2>Member pictures (${members.length})</h2>
 <p>Members post these without review, so check them from time to time and delete anything that breaks your rules.</p>
@@ -928,6 +1151,20 @@ document.querySelectorAll(".c").forEach(function(card){
     };
     return;
   }
+  if(kind==="report"){
+    var rid=card.dataset.id, about=card.dataset.about;
+    card.querySelector(".dm").onclick=function(){
+      post({action:"dismissreport",id:rid}).then(function(){ card.remove(); })
+        .catch(function(){ alert("That did not work. Reload and try again."); });
+    };
+    card.querySelector(".rm").onclick=function(){
+      if(!confirm("Remove "+about+"? This deletes their account, pictures and messages.")) return;
+      post({action:"removeuser",username:about}).then(function(){ return post({action:"dismissreport",id:rid}); })
+        .then(function(){ card.remove(); })
+        .catch(function(){ alert("That did not work. Reload and try again."); });
+    };
+    return;
+  }
   if(kind==="user"){
     var uname=card.dataset.user;
     card.querySelector(".rp").onclick=function(){
@@ -946,8 +1183,8 @@ document.querySelectorAll(".c").forEach(function(card){
     post({action:action,url:card.dataset.url}).then(function(){ card.remove(); })
       .catch(function(){ alert("That did not work. Reload and try again."); });
   }
-  var ok=card.querySelector(".ok"); if(ok) ok.onclick=function(){act("approve")};
-  card.querySelector(".no").onclick=function(){act(kind==="pending"?"delete":kind==="product"?"deleteproduct":kind==="order"?"deleteorder":kind==="invite"?"deleteinvite":"deletemember")};
+  var ok=card.querySelector(".ok"); if(ok) ok.onclick=function(){act(kind==="memberpending"?"approvemember":"approve")};
+  card.querySelector(".no").onclick=function(){act(kind==="pending"?"delete":kind==="memberpending"?"deletememberpending":kind==="product"?"deleteproduct":kind==="order"?"deleteorder":kind==="invite"?"deleteinvite":"deletemember")};
 });
 </script></body></html>`);
 };
@@ -1087,7 +1324,7 @@ return module.exports;
 })({ exports: {} }, {}, __req);
 
 const __routes = {
-  account: __mods.account, members: __mods.members, "member-image": __mods["member-image"],
+  account: __mods.account, messages: __mods.messages, members: __mods.members, "member-image": __mods["member-image"],
   products: __mods.products, upload: __mods.upload, wall: __mods.wall, admin: __mods.admin,
   invite: __mods.invite, order: __mods.order,
 };

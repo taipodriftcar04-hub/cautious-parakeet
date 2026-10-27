@@ -60,6 +60,26 @@
   details { margin-top: 26px; max-width: 460px; border: 1.5px solid var(--line); border-radius: 14px; padding: 4px 16px; background: var(--surface); }
   summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
   details form { margin: 4px 0 16px; }
+  .tabs.main { margin-top: 8px; }
+  .badge { display: inline-block; min-width: 1.4em; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--alert); color: #fff; font-size: .8rem; text-align: center; }
+  @media (prefers-color-scheme: dark) { .badge { color: #12142b; } }
+  .inbox { list-style: none; margin: 18px 0 0; padding: 0; max-width: 560px; }
+  .inbox li button { width: 100%; text-align: left; font: inherit; background: var(--surface); color: var(--ink); border: 1.5px solid var(--line); border-radius: 14px; padding: 12px 16px; margin-bottom: 10px; cursor: pointer; display: block; }
+  .inbox li button:hover { border-color: var(--thread); }
+  .inbox .who2 { font-weight: 700; }
+  .inbox .snip { display: block; color: var(--muted); font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .newmsg { display: flex; gap: 10px; max-width: 560px; margin-top: 18px; }
+  .newmsg select { flex: 1; min-width: 0; font: inherit; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); }
+  .threadbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 18px; }
+  .threadbar h2 { margin: 0 auto 0 0; font-size: 1.3rem; }
+  .thread { margin-top: 14px; max-width: 560px; max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 6px 2px; }
+  .bubble { max-width: 82%; padding: 9px 13px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.4; }
+  .bubble.me { align-self: flex-end; background: var(--thread); color: #fff; border-bottom-right-radius: 4px; }
+  @media (prefers-color-scheme: dark) { .bubble.me { color: #12142b; } }
+  .bubble.them { align-self: flex-start; background: var(--surface); border: 1.5px solid var(--line); border-bottom-left-radius: 4px; }
+  .bubble small { display: block; opacity: .7; font-size: .75rem; margin-top: 3px; }
+  .compose { display: grid; gap: 10px; max-width: 560px; margin-top: 12px; }
+  .compose textarea { font: inherit; width: 100%; min-height: 76px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); resize: vertical; }
   footer { padding: 40px 0 56px; color: var(--muted); font-size: .92rem; }
 </style>
 </head>
@@ -77,7 +97,7 @@
     <!-- Signed out -->
     <section id="gate" hidden>
       <h1>Members</h1>
-      <p>Sign in with your username and password. New here? Create an account with the invite code we sent you. You only need the code once.</p>
+      <p id="gateIntro">Sign in with your username and password. New here? Create a free account in a minute.</p>
 
       <div class="tabs" role="tablist">
         <button type="button" role="tab" id="tabIn" aria-selected="true" aria-controls="inForm">Sign in</button>
@@ -97,9 +117,12 @@
       </form>
 
       <form id="upForm" novalidate hidden>
-        <div>
+        <div id="codeRow" hidden>
           <label class="t" for="upCode">Invite code</label>
           <input type="text" id="upCode" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="abc234-0kq2-1a2b3c4d5e6f">
+        </div>
+        <div style="position:absolute;left:-9999px" aria-hidden="true">
+          <label>Leave this empty <input type="text" id="upWebsite" tabindex="-1" autocomplete="off"></label>
         </div>
         <div>
           <label class="t" for="upUser">Choose a username</label>
@@ -119,6 +142,12 @@
 
     <!-- Signed in -->
     <section id="room" hidden>
+      <div class="tabs main" role="tablist">
+        <button type="button" role="tab" id="tabPics" aria-selected="true">Pictures</button>
+        <button type="button" role="tab" id="tabMsgs" aria-selected="false">Messages<span class="badge" id="badge" hidden></span></button>
+      </div>
+
+      <div id="picsPane">
       <h1>Member pictures</h1>
       <p>Only signed-in members can see these. Pictures are cleaned of location and camera data in your browser before they upload.</p>
       <form id="picForm" novalidate>
@@ -137,6 +166,35 @@
       <div class="msg err" id="picErr" role="alert" hidden></div>
       <div class="grid" id="grid" aria-live="polite"></div>
       <div class="empty" id="empty" hidden>No pictures yet. Post the first one.</div>
+      </div>
+
+      <div id="msgsPane" hidden>
+        <div id="inboxView">
+          <h1>Messages</h1>
+          <p>Send a private message to another member. Only you and the person you write to can read it. If someone bothers you, block them or report the chat.</p>
+          <div class="newmsg">
+            <select id="memberSel" aria-label="Choose a member to message"><option value="">Choose a member…</option></select>
+            <button class="btn" type="button" id="startBtn">Write</button>
+          </div>
+          <ul class="inbox" id="inbox"></ul>
+          <div class="empty" id="inboxEmpty" hidden>No conversations yet. Choose a member above to start one.</div>
+        </div>
+
+        <div id="threadView" hidden>
+          <div class="threadbar">
+            <button class="btn ghost small" type="button" id="backBtn">Back</button>
+            <h2 id="threadName"></h2>
+            <button class="btn ghost small" type="button" id="blockBtn">Block</button>
+            <button class="btn ghost small" type="button" id="reportBtn">Report</button>
+          </div>
+          <div class="thread" id="thread" aria-live="polite"></div>
+          <form class="compose" id="composeForm" novalidate>
+            <textarea id="msgText" maxlength="1000" placeholder="Write a message" aria-label="Message"></textarea>
+            <div><button class="btn" type="submit" id="sendBtn">Send</button></div>
+          </form>
+        </div>
+        <div class="msg err" id="msgErr" role="alert" hidden></div>
+      </div>
 
       <details>
         <summary>Change my password</summary>
@@ -164,6 +222,12 @@
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var cleanBlob = null;
+  var inviteRequired = false;
+  fetch("/api/account?info=1").then(function (r) { return r.json(); }).then(function (d) {
+    inviteRequired = !!d.inviteRequired;
+    $("codeRow").hidden = !inviteRequired;
+    if (inviteRequired) $("gateIntro").textContent = "Sign in with your username and password. New here? Create an account with the invite code we sent you. You only need the code once.";
+  }).catch(function () {});
 
   function api(body) {
     return fetch("/api/account", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) })
@@ -171,7 +235,7 @@
   }
 
   function showGate() { $("gate").hidden = false; $("room").hidden = true; $("who").hidden = true; }
-  function showRoom(user) { $("gate").hidden = true; $("room").hidden = false; $("who").hidden = false; $("whoName").textContent = "@" + user; loadGrid(); }
+  function showRoom(user) { $("gate").hidden = true; $("room").hidden = false; $("who").hidden = false; $("whoName").textContent = "@" + user; setTab("pics"); loadGrid(); }
 
   function check() {
     fetch("/api/account", { credentials: "same-origin" }).then(function (r) {
@@ -207,9 +271,10 @@
   $("upForm").addEventListener("submit", function (ev) {
     ev.preventDefault(); $("gateErr").hidden = true;
     var c = $("upCode").value.trim(), u = $("upUser").value.trim(), p = $("upPass").value;
-    if (!c || !u || !p) return gateFail("Fill in the invite code, a username and a password.");
+    if (inviteRequired && !c) return gateFail("Enter your invite code.");
+    if (!u || !p) return gateFail("Choose a username and a password.");
     $("upBtn").disabled = true;
-    api({ action: "signup", code: c, username: u, password: p }).then(function (x) {
+    api({ action: "signup", code: c, username: u, password: p, website: $("upWebsite").value }).then(function (x) {
       if (!x.ok) return gateFail(x.d.error || "Could not create the account.");
       $("upPass").value = ""; $("upCode").value = "";
       if (window.va) window.va("event", { name: "member_signup" });
@@ -294,11 +359,142 @@
       if (r.status === 401) { showGate(); return; }
       if (!r.ok) throw new Error(r.status === 429 ? "Too many pictures. Try again later." : r.status === 413 ? "That picture is too large." : "Your picture was not posted. Try again in a moment.");
       if (window.va) window.va("event", { name: "member_upload" });
+      var info = {}; try { info = await r.json(); } catch (e) {}
+      $("picDone").textContent = info.pending ? "Picture received. It will appear for other members after review." : "Picture posted.";
       $("picDone").hidden = false; $("picForm").reset(); $("preview").hidden = true; cleanBlob = null;
       loadGrid();
     } catch (e) { picFail(e.message || "Your picture was not posted."); }
     finally { $("picBtn").disabled = false; }
   });
+
+  /* ---------- messages ---------- */
+  var current = null;          // username of the open conversation, or null
+  var lastActive = Date.now();
+  ["click", "keydown", "touchstart", "scroll"].forEach(function (ev) {
+    window.addEventListener(ev, function () { lastActive = Date.now(); }, { passive: true });
+  });
+
+  function msgFail(m) { $("msgErr").textContent = m; $("msgErr").hidden = false; }
+  function getJson(url) {
+    return fetch(url, { credentials: "same-origin" }).then(function (r) {
+      if (r.status === 401) { showGate(); throw new Error("signed out"); }
+      return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "Something went wrong."); return d; });
+    });
+  }
+  function postMsg(body) {
+    return fetch("/api/messages", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) })
+      .then(function (r) {
+        if (r.status === 401) { showGate(); throw new Error("signed out"); }
+        return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || "Something went wrong."); return d; });
+      });
+  }
+  function setBadge(n) { var b = $("badge"); b.textContent = n; b.hidden = !n; }
+
+  function setTab(name) {
+    var msgs = name === "msgs";
+    $("picsPane").hidden = msgs; $("msgsPane").hidden = !msgs;
+    $("tabPics").setAttribute("aria-selected", !msgs); $("tabMsgs").setAttribute("aria-selected", msgs);
+    $("msgErr").hidden = true;
+    if (msgs) openInbox(); else refreshBadge();
+  }
+  $("tabPics").addEventListener("click", function () { setTab("pics"); });
+  $("tabMsgs").addEventListener("click", function () { setTab("msgs"); });
+
+  function refreshBadge() { getJson("/api/messages").then(function (d) { setBadge(d.unread || 0); }).catch(function () {}); }
+
+  function openInbox() {
+    current = null; $("threadView").hidden = true; $("inboxView").hidden = false; $("msgErr").hidden = true;
+    getJson("/api/messages").then(function (d) {
+      setBadge(d.unread || 0);
+      var ul = $("inbox"); ul.innerHTML = "";
+      (d.inbox || []).forEach(function (it) {
+        var li = document.createElement("li"), b = document.createElement("button"); b.type = "button";
+        var n = document.createElement("span"); n.className = "who2"; n.textContent = "@" + it.user; b.appendChild(n);
+        if (it.unread) { var bd = document.createElement("span"); bd.className = "badge"; bd.textContent = it.unread; b.appendChild(bd); }
+        var sn = document.createElement("span"); sn.className = "snip"; sn.textContent = it.last; b.appendChild(sn);
+        b.addEventListener("click", function () { openThread(it.user); });
+        li.appendChild(b); ul.appendChild(li);
+      });
+      $("inboxEmpty").hidden = (d.inbox || []).length > 0;
+    }).catch(function (e) { if (e.message !== "signed out") msgFail(e.message); });
+    getJson("/api/messages?list=members").then(function (d) {
+      var sel = $("memberSel"), keep = sel.value; sel.innerHTML = "";
+      var first = document.createElement("option"); first.value = ""; first.textContent = "Choose a member…"; sel.appendChild(first);
+      (d.members || []).forEach(function (m) { var o = document.createElement("option"); o.value = m; o.textContent = "@" + m; sel.appendChild(o); });
+      sel.value = keep;
+    }).catch(function () {});
+  }
+
+  $("startBtn").addEventListener("click", function () {
+    var u = $("memberSel").value;
+    if (!u) return msgFail("Choose a member first.");
+    openThread(u);
+  });
+
+  var blockedNow = false;
+  function renderThread(d) {
+    var box = $("thread");
+    var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60 || !box.children.length;
+    box.innerHTML = "";
+    (d.messages || []).forEach(function (m) {
+      var div = document.createElement("div"); div.className = "bubble " + (m.from === current ? "them" : "me");
+      div.appendChild(document.createTextNode(m.text));
+      var sm = document.createElement("small");
+      var t = new Date(m.at); sm.textContent = isNaN(t) ? "" : t.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      div.appendChild(sm); box.appendChild(div);
+    });
+    if (!(d.messages || []).length) {
+      var e = document.createElement("div"); e.className = "empty"; e.style.marginTop = "0"; e.textContent = "No messages yet. Say hello."; box.appendChild(e);
+    }
+    blockedNow = !!d.blocked; $("blockBtn").textContent = blockedNow ? "Unblock" : "Block";
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+  function loadThread() {
+    if (!current) return;
+    var who = current;
+    getJson("/api/messages?with=" + encodeURIComponent(who)).then(function (d) { if (current === who) renderThread(d); })
+      .catch(function (e) { if (e.message !== "signed out") msgFail(e.message); });
+  }
+  function openThread(user) {
+    current = user; $("inboxView").hidden = true; $("threadView").hidden = false; $("msgErr").hidden = true;
+    $("threadName").textContent = "@" + user; $("thread").innerHTML = ""; $("msgText").value = "";
+    loadThread();
+  }
+  $("backBtn").addEventListener("click", openInbox);
+
+  $("composeForm").addEventListener("submit", function (ev) {
+    ev.preventDefault(); $("msgErr").hidden = true;
+    var text = $("msgText").value.trim();
+    if (!text) return msgFail("Write a message first.");
+    $("sendBtn").disabled = true;
+    postMsg({ action: "send", to: current, text: text }).then(function () {
+      $("msgText").value = ""; $("thread").innerHTML = ""; loadThread();
+      if (window.va) window.va("event", { name: "message_sent" });
+    }).catch(function (e) { if (e.message !== "signed out") msgFail(e.message); })
+      .then(function () { $("sendBtn").disabled = false; });
+  });
+
+  $("blockBtn").addEventListener("click", function () {
+    var act = blockedNow ? "unblock" : "block";
+    if (act === "block" && !confirm("Block @" + current + "? They won't be able to message you.")) return;
+    postMsg({ action: act, user: current }).then(function () { loadThread(); })
+      .catch(function (e) { if (e.message !== "signed out") msgFail(e.message); });
+  });
+
+  $("reportBtn").addEventListener("click", function () {
+    if (!confirm("Report this conversation? The last 20 messages will be sent to the site owner to review.")) return;
+    var note = prompt("What is wrong? (optional)") || "";
+    postMsg({ action: "report", with: current, note: note }).then(function () { alert("Reported. Thank you. You can also block this member."); })
+      .catch(function (e) { if (e.message !== "signed out") msgFail(e.message); });
+  });
+
+  // Refresh while the page is open and you are active (keeps database use low).
+  setInterval(function () {
+    if (document.visibilityState !== "visible" || Date.now() - lastActive > 10 * 60 * 1000) return;
+    if ($("room").hidden) return;
+    if (!$("msgsPane").hidden) { if (current) loadThread(); else openInbox(); }
+    else refreshBadge();
+  }, 25000);
 
   check();
 })();

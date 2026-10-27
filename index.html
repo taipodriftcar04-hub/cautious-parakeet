@@ -11,8 +11,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Orbweave">
-<title>Orbweave: a private network for people who'd rather not be followed</title>
-<meta name="description" content="Orbweave routes every message through three relays so no single one knows who you are, what you said, and who you said it to.">
+<title>Orbweave: a private community for sharing and messaging</title>
+<meta name="description" content="Orbweave is a small private community. Members share pictures and message each other directly. No ads, no public profiles, no tracking cookies.">
 <script>
   window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
 </script>
@@ -181,21 +181,21 @@
     <nav aria-label="Main">
       <a href="#products" id="navProducts" hidden>Products</a>
       <a href="#how">How it works</a>
-      <a href="#knows">What we can see</a>
+      <a href="#knows">Who sees what</a>
       <a href="#promises">Promises</a>
       <a href="#wall">The wall</a>
       <a class="keep" href="/members.html">Member sign in</a>
-      <a class="keep" href="#invite">Request an invite</a>
+      <a class="keep" id="navJoin" href="/members.html">Join</a>
     </nav>
   </header>
 
   <main>
     <div class="hero">
       <div>
-        <h1>Talk without leaving a trail.</h1>
-        <p class="lead">Orbweave sends every message through three relays run by different people. No single relay knows who you are, what you said, and who you said it to.</p>
+        <h1>A private space for sharing and messaging.</h1>
+        <p class="lead">Orbweave is a small private community. Members share pictures and message each other directly. No ads, no public profiles, and no tracking cookies.</p>
         <div class="hero-cta">
-          <a class="btn" href="#invite">Request an invite</a>
+          <a class="btn" id="heroJoin" href="/members.html">Create a free account</a>
           <a class="btn ghost" href="#how">See how it works</a>
           <button class="btn ghost" id="installBtn" type="button" hidden>Install app</button>
         </div>
@@ -203,7 +203,7 @@
       </div>
 
       <div class="demo" aria-labelledby="demo-label">
-        <label for="msg" id="demo-label">Try it: send a message across the network</label>
+        <label for="msg" id="demo-label">Illustration: how a message can pass through three relays</label>
         <div class="row">
           <input type="text" id="msg" value="Meet at the usual place at 8" maxlength="60" autocomplete="off">
           <button id="send" type="button">Send</button>
@@ -217,6 +217,7 @@
           <strong>Ready.</strong>
           <span class="sees">Press Send and watch what each relay is able to see.</span>
         </div>
+        <p style="margin:14px 0 0;color:var(--muted);font-size:0.9rem">This is only an illustration of private routing. Orbweave does not route messages this way. Messages between members are stored on our server and can be read only by the two people in the conversation.</p>
       </div>
     </div>
   </main>
@@ -231,19 +232,19 @@
 
 <section class="band" id="how">
   <div class="wrap">
-    <h2>Three hops, three locked layers</h2>
+    <h2>How it works</h2>
     <ol class="steps">
       <li>
-        <h3>Your device wraps it</h3>
-        <p>Before anything leaves your phone, the message is sealed in three layers of encryption, one for each relay on the path.</p>
+        <h3>Create your account</h3>
+        <p>Choose a username and a password. It takes a minute and needs no email address.</p>
       </li>
       <li>
-        <h3>Each relay peels one layer</h3>
-        <p>A relay opens only its own layer. That reveals the next stop, never the sender behind it or the message inside it.</p>
+        <h3>Share pictures</h3>
+        <p>Post pictures for other members to see. A person looks at every picture before it appears.</p>
       </li>
       <li>
-        <h3>Your friend opens the last one</h3>
-        <p>Only the final recipient can read the message. The path is chosen fresh for every conversation and thrown away afterwards.</p>
+        <h3>Message members</h3>
+        <p>Send private messages to other members. Install Orbweave on your home screen to open it like an app.</p>
       </li>
     </ol>
   </div>
@@ -252,18 +253,18 @@
 <section id="knows">
   <div class="wrap split">
     <div>
-      <h2>What each relay can see</h2>
-      <p style="color:var(--muted);margin-top:18px;max-width:42ch">Orbweave is built so that spying on one point on the network gets you almost nothing. To piece a conversation together, someone would have to control all three relays at the same moment.</p>
+      <h2>Who can see what</h2>
+      <p style="color:var(--muted);margin-top:18px;max-width:42ch">We would rather tell you exactly how this works than promise more than we can deliver.</p>
     </div>
     <table>
       <thead>
-        <tr><th scope="col">Who</th><th scope="col">Knows</th><th scope="col">Cannot know</th></tr>
+        <tr><th scope="col">Who</th><th scope="col">Can see</th><th scope="col">Cannot see</th></tr>
       </thead>
       <tbody>
-        <tr><th scope="row">First relay</th><td class="yes">Your address</td><td class="no">The message, the recipient</td></tr>
-        <tr><th scope="row">Middle relay</th><td class="yes">Only the relays on either side</td><td class="no">Who sent it, who gets it</td></tr>
-        <tr><th scope="row">Last relay</th><td class="yes">The recipient</td><td class="no">The message, who sent it</td></tr>
-        <tr><th scope="row">Orbweave</th><td class="yes">Nothing about your chats</td><td class="no">Your name, contacts, history</td></tr>
+        <tr><th scope="row">Visitors</th><td class="yes">Products and wall pictures we approved</td><td class="no">Anything in the members area</td></tr>
+        <tr><th scope="row">Other members</th><td class="yes">Your username and the pictures you post</td><td class="no">Your messages to other people, your password</td></tr>
+        <tr><th scope="row">The person you message</th><td class="yes">What you send them</td><td class="no">Your chats with anyone else</td></tr>
+        <tr><th scope="row">The site owner</th><td class="yes">Usernames and posted pictures. Chats only if a member reports them.</td><td class="no">Your password, which is stored scrambled</td></tr>
       </tbody>
     </table>
   </div>
@@ -272,14 +273,14 @@
 <section class="band" id="promises">
   <div class="wrap split">
     <div>
-      <h2>What we will never keep</h2>
-      <p style="color:var(--muted);margin-top:18px;max-width:42ch">Privacy that depends on trusting us is not privacy. These limits are in how the network is built, not just in a policy.</p>
+      <h2>Our promises</h2>
+      <p style="color:var(--muted);margin-top:18px;max-width:42ch">Messages and pictures are kept on our hosting provider's servers and are not end-to-end encrypted. The site owner and the hosting provider could technically reach stored data. Within that limit, this is what we commit to.</p>
     </div>
     <ul class="list">
-      <li><b>No accounts tied to real identity</b><span>You join with an invite and pick any handle. No phone number, no email on file.</span></li>
-      <li><b>No message history on our servers</b><span>Messages are delivered, then gone. Your own device is the only archive.</span></li>
-      <li><b>No ads, no profiles, no selling data</b><span>We have nothing to sell because we never collect it.</span></li>
-      <li><b>Open source relays</b><span>Anyone can read the code, run a relay and check our claims.</span></li>
+      <li><b>No ads and no selling data</b><span>We run no ads and share nothing with advertisers.</span></li>
+      <li><b>No tracking cookies</b><span>We count visits with privacy-friendly analytics that do not follow you around the web.</span></li>
+      <li><b>Pictures are cleaned first</b><span>Location and camera details are removed from every picture in your browser before it uploads.</span></li>
+      <li><b>You can leave any time</b><span>Ask and we delete your account, your pictures and your messages.</span></li>
     </ul>
   </div>
 </section>
@@ -311,10 +312,19 @@
   </div>
 </section>
 
-<section class="band" id="invite">
+<section class="band" id="join">
+  <div class="wrap">
+    <h2>Join Orbweave</h2>
+    <p style="color:var(--muted);margin-top:18px;max-width:46ch">Free to join. Pick a username and password and you can start sharing pictures and messaging other members.</p>
+    <p style="margin-top:22px"><a class="btn" href="/members.html">Create a free account</a></p>
+    <p style="margin-top:18px;color:var(--muted)">Already a member? <a href="/members.html">Sign in</a>.</p>
+  </div>
+</section>
+
+<section class="band" id="invite" hidden>
   <div class="wrap">
     <h2>Orbweave is invite-only</h2>
-    <p style="color:var(--muted);margin-top:18px;max-width:46ch">We grow slowly so every relay operator can be vetted. Leave a way to reach you and we'll send an invite when a spot opens.</p>
+    <p style="color:var(--muted);margin-top:18px;max-width:46ch">We grow slowly. Leave your email and we'll send you an invite code when a spot opens.</p>
     <form class="invite" id="inviteForm" novalidate>
       <div>
         <label for="contact" style="font-weight:600;display:block;margin-bottom:6px">Where should we send your invite?</label>
@@ -334,8 +344,8 @@
 
 <footer>
   <div class="wrap">
-    <span>&copy; 2026 Orbweave. A demonstration page: no real network is running.</span>
-    <span><a href="#how">How it works</a> &nbsp; <a href="#promises">Promises</a> &nbsp; <a href="#invite">Invite</a></span>
+    <span>&copy; 2026 Orbweave. A private community.</span>
+    <span><a href="#how">How it works</a> &nbsp; <a href="#promises">Promises</a> &nbsp; <a href="/members.html">Members</a></span>
   </div>
 </footer>
 
@@ -600,6 +610,15 @@
     }).catch(function () { wallEmpty.hidden = false; });
   }
   loadWall();
+
+  /* ---- Open sign-up or invite-only (set by the owner in Vercel) ---- */
+  fetch("/api/account?info=1").then(function (r) { return r.json(); }).then(function (d) {
+    if (!d.inviteRequired) return;
+    document.getElementById("join").hidden = true;
+    document.getElementById("invite").hidden = false;
+    var hj = document.getElementById("heroJoin"); hj.href = "#invite"; hj.textContent = "Request an invite";
+    var nj = document.getElementById("navJoin"); nj.href = "#invite"; nj.textContent = "Request an invite";
+  }).catch(function () {});
 
   var form = document.getElementById("inviteForm");
   var confirmBox = document.getElementById("confirm");
