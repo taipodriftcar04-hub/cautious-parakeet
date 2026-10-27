@@ -32,23 +32,34 @@
   .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 22px 0; gap: 16px; }
   .brand { font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif; font-size: 1.5rem; font-weight: 700; text-decoration: none; color: inherit; }
+  .who { display: flex; align-items: center; gap: 12px; font-size: 0.95rem; color: var(--muted); }
   h1 { font-family: "Iowan Old Style", Palatino, Georgia, serif; font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; letter-spacing: -0.02em; margin: 24px 0 10px; }
   p { margin: 0 0 1em; color: var(--muted); max-width: 52ch; }
   .btn { display: inline-block; padding: 12px 22px; border-radius: 999px; font: inherit; font-weight: 600; cursor: pointer; border: 2px solid var(--thread); background: var(--thread); color: #fff; }
   @media (prefers-color-scheme: dark) { .btn { color: #12142b; } }
   .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+  .btn.small { padding: 8px 16px; font-size: 0.9rem; }
   .btn:disabled { opacity: .55; cursor: progress; }
-  form { display: grid; gap: 14px; max-width: 460px; margin-top: 24px; }
-  input[type=text], input[type=file] { font: inherit; width: 100%; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); }
+  .tabs { display: flex; gap: 8px; margin-top: 22px; }
+  .tabs button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 999px; border: 1.5px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--thread-soft); color: var(--ink); border-color: var(--thread); }
+  form { display: grid; gap: 14px; max-width: 460px; margin-top: 20px; }
+  input[type=text], input[type=password], input[type=file] { font: inherit; width: 100%; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); }
   label.t { font-weight: 600; display: block; margin-bottom: 6px; }
+  small.hint { color: var(--muted); display: block; margin-top: 4px; }
   .msg { margin-top: 16px; padding: 14px 16px; border-radius: 12px; max-width: 460px; }
   .msg[hidden], [hidden] { display: none !important; }
   .msg.err { border: 1.5px solid var(--alert); color: var(--alert); }
-  .msg.ok { border: 1.5px solid var(--thread); background: var(--thread-soft); }
+  .msg.ok { border: 1.5px solid var(--thread); background: var(--thread-soft); color: var(--ink); }
   .preview { max-width: 240px; border-radius: 12px; border: 1.5px solid var(--line); }
   .grid { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
-  .grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); display: block; }
+  figure { margin: 0; }
+  figure img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); display: block; }
+  figcaption { font-size: 0.85rem; color: var(--muted); padding: 4px 4px 0; }
   .empty { margin-top: 36px; padding: 28px; border: 1.5px dashed var(--line); border-radius: 16px; color: var(--muted); max-width: 520px; }
+  details { margin-top: 26px; max-width: 460px; border: 1.5px solid var(--line); border-radius: 14px; padding: 4px 16px; background: var(--surface); }
+  summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
+  details form { margin: 4px 0 16px; }
   footer { padding: 40px 0 56px; color: var(--muted); font-size: .92rem; }
 </style>
 </head>
@@ -56,28 +67,60 @@
 <div class="wrap">
   <header>
     <a class="brand" href="/">Orbweave</a>
-    <button class="btn ghost" id="out" type="button" hidden>Sign out</button>
+    <div class="who" id="who" hidden>
+      <span>Signed in as <strong id="whoName"></strong></span>
+      <button class="btn ghost small" id="out" type="button">Sign out</button>
+    </div>
   </header>
 
   <main>
     <!-- Signed out -->
     <section id="gate" hidden>
       <h1>Members</h1>
-      <p>Enter the invite code we sent you. Don't have one? Request an invite from the home page.</p>
-      <form id="joinForm" novalidate>
+      <p>Sign in with your username and password. New here? Create an account with the invite code we sent you. You only need the code once.</p>
+
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tabIn" aria-selected="true" aria-controls="inForm">Sign in</button>
+        <button type="button" role="tab" id="tabUp" aria-selected="false" aria-controls="upForm">Create account</button>
+      </div>
+
+      <form id="inForm" novalidate>
         <div>
-          <label class="t" for="code">Invite code</label>
-          <input type="text" id="code" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="abc234-0kq2-1a2b3c4d5e6f">
+          <label class="t" for="inUser">Username</label>
+          <input type="text" id="inUser" autocomplete="username" autocapitalize="none" spellcheck="false">
         </div>
-        <button class="btn" type="submit" id="joinBtn">Sign in</button>
+        <div>
+          <label class="t" for="inPass">Password</label>
+          <input type="password" id="inPass" autocomplete="current-password">
+        </div>
+        <button class="btn" type="submit" id="inBtn">Sign in</button>
       </form>
-      <div class="msg err" id="joinErr" role="alert" hidden></div>
+
+      <form id="upForm" novalidate hidden>
+        <div>
+          <label class="t" for="upCode">Invite code</label>
+          <input type="text" id="upCode" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="abc234-0kq2-1a2b3c4d5e6f">
+        </div>
+        <div>
+          <label class="t" for="upUser">Choose a username</label>
+          <input type="text" id="upUser" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20">
+          <small class="hint">3 to 20 letters, numbers or underscores. Other members will see it next to your pictures.</small>
+        </div>
+        <div>
+          <label class="t" for="upPass">Choose a password</label>
+          <input type="password" id="upPass" autocomplete="new-password" maxlength="100">
+          <small class="hint">At least 8 characters. Use something you don't use anywhere else.</small>
+        </div>
+        <button class="btn" type="submit" id="upBtn">Create account</button>
+      </form>
+
+      <div class="msg err" id="gateErr" role="alert" hidden></div>
     </section>
 
     <!-- Signed in -->
     <section id="room" hidden>
       <h1>Member pictures</h1>
-      <p>Only people with an invite code can see these. Pictures are cleaned of location and camera data in your browser before they upload.</p>
+      <p>Only signed-in members can see these. Pictures are cleaned of location and camera data in your browser before they upload.</p>
       <form id="picForm" novalidate>
         <div>
           <label class="t" for="pic">Add a picture (JPG, PNG or WebP)</label>
@@ -94,6 +137,23 @@
       <div class="msg err" id="picErr" role="alert" hidden></div>
       <div class="grid" id="grid" aria-live="polite"></div>
       <div class="empty" id="empty" hidden>No pictures yet. Post the first one.</div>
+
+      <details>
+        <summary>Change my password</summary>
+        <form id="pwForm" novalidate>
+          <div>
+            <label class="t" for="pwOld">Current password</label>
+            <input type="password" id="pwOld" autocomplete="current-password">
+          </div>
+          <div>
+            <label class="t" for="pwNew">New password</label>
+            <input type="password" id="pwNew" autocomplete="new-password" maxlength="100">
+          </div>
+          <button class="btn small" type="submit" id="pwBtn">Change password</button>
+        </form>
+        <div class="msg ok" id="pwDone" role="status" hidden>Password changed. Your other devices have been signed out.</div>
+        <div class="msg err" id="pwErr" role="alert" hidden></div>
+      </details>
     </section>
   </main>
 
@@ -103,19 +163,77 @@
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var gate = $("gate"), room = $("room"), out = $("out");
   var cleanBlob = null;
 
-  function showGate() { gate.hidden = false; room.hidden = true; out.hidden = true; }
-  function showRoom() { gate.hidden = true; room.hidden = false; out.hidden = false; loadGrid(); }
+  function api(body) {
+    return fetch("/api/account", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); });
+  }
+
+  function showGate() { $("gate").hidden = false; $("room").hidden = true; $("who").hidden = true; }
+  function showRoom(user) { $("gate").hidden = true; $("room").hidden = false; $("who").hidden = false; $("whoName").textContent = "@" + user; loadGrid(); }
 
   function check() {
-    fetch("/api/members", { credentials: "same-origin" }).then(function (r) {
-      if (r.status === 401) return showGate();
-      showRoom();
+    fetch("/api/account", { credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) return showGate();
+      return r.json().then(function (d) { showRoom(d.user); });
     }).catch(showGate);
   }
 
+  /* tabs */
+  function pick(signIn) {
+    $("tabIn").setAttribute("aria-selected", signIn); $("tabUp").setAttribute("aria-selected", !signIn);
+    $("inForm").hidden = !signIn; $("upForm").hidden = signIn; $("gateErr").hidden = true;
+  }
+  $("tabIn").addEventListener("click", function () { pick(true); });
+  $("tabUp").addEventListener("click", function () { pick(false); });
+
+  function gateFail(m) { $("gateErr").textContent = m; $("gateErr").hidden = false; }
+
+  $("inForm").addEventListener("submit", function (ev) {
+    ev.preventDefault(); $("gateErr").hidden = true;
+    var u = $("inUser").value.trim(), p = $("inPass").value;
+    if (!u || !p) return gateFail("Enter your username and password.");
+    $("inBtn").disabled = true;
+    api({ action: "login", username: u, password: p }).then(function (x) {
+      if (!x.ok) return gateFail(x.d.error || "Could not sign in.");
+      $("inPass").value = "";
+      if (window.va) window.va("event", { name: "member_signin" });
+      showRoom(x.d.user);
+    }).catch(function () { gateFail("Could not sign in. Try again in a moment."); })
+      .then(function () { $("inBtn").disabled = false; });
+  });
+
+  $("upForm").addEventListener("submit", function (ev) {
+    ev.preventDefault(); $("gateErr").hidden = true;
+    var c = $("upCode").value.trim(), u = $("upUser").value.trim(), p = $("upPass").value;
+    if (!c || !u || !p) return gateFail("Fill in the invite code, a username and a password.");
+    $("upBtn").disabled = true;
+    api({ action: "signup", code: c, username: u, password: p }).then(function (x) {
+      if (!x.ok) return gateFail(x.d.error || "Could not create the account.");
+      $("upPass").value = ""; $("upCode").value = "";
+      if (window.va) window.va("event", { name: "member_signup" });
+      showRoom(x.d.user);
+    }).catch(function () { gateFail("Could not create the account. Try again in a moment."); })
+      .then(function () { $("upBtn").disabled = false; });
+  });
+
+  $("out").addEventListener("click", function () { api({ action: "logout" }).then(showGate); });
+
+  /* change password */
+  $("pwForm").addEventListener("submit", function (ev) {
+    ev.preventDefault(); $("pwDone").hidden = true; $("pwErr").hidden = true;
+    var o = $("pwOld").value, n = $("pwNew").value;
+    if (!o || !n) { $("pwErr").textContent = "Fill in both boxes."; $("pwErr").hidden = false; return; }
+    $("pwBtn").disabled = true;
+    api({ action: "password", oldPassword: o, newPassword: n }).then(function (x) {
+      if (!x.ok) { $("pwErr").textContent = x.d.error || "Could not change the password."; $("pwErr").hidden = false; return; }
+      $("pwDone").hidden = false; $("pwForm").reset();
+    }).catch(function () { $("pwErr").textContent = "Could not change the password."; $("pwErr").hidden = false; })
+      .then(function () { $("pwBtn").disabled = false; });
+  });
+
+  /* pictures */
   function loadGrid() {
     var grid = $("grid"); grid.innerHTML = "";
     fetch("/api/members", { credentials: "same-origin" }).then(function (r) {
@@ -124,36 +242,15 @@
     }).then(function (d) {
       var list = d.images || [];
       $("empty").hidden = list.length > 0;
-      list.forEach(function (u) {
-        var im = document.createElement("img");
-        im.src = u; im.alt = "Member picture"; im.loading = "lazy";
-        grid.appendChild(im);
+      list.forEach(function (it) {
+        var fig = document.createElement("figure");
+        var im = document.createElement("img"); im.src = it.src; im.alt = "Picture by " + (it.by || "a member"); im.loading = "lazy";
+        fig.appendChild(im);
+        if (it.by) { var cap = document.createElement("figcaption"); cap.textContent = "@" + it.by; fig.appendChild(cap); }
+        grid.appendChild(fig);
       });
     }).catch(function () { $("empty").hidden = false; });
   }
-
-  $("joinForm").addEventListener("submit", function (ev) {
-    ev.preventDefault();
-    var err = $("joinErr"); err.hidden = true;
-    var code = $("code").value.trim();
-    if (!code) { err.textContent = "Enter your invite code."; err.hidden = false; $("code").focus(); return; }
-    $("joinBtn").disabled = true;
-    fetch("/api/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code }), credentials: "same-origin" })
-      .then(function (r) {
-        return r.json().then(function (d) { return { ok: r.ok, d: d }; });
-      }).then(function (x) {
-        if (!x.ok) { err.textContent = x.d.error || "Could not sign in."; err.hidden = false; return; }
-        $("code").value = "";
-        if (window.va) window.va("event", { name: "member_signin" });
-        showRoom();
-      }).catch(function () { err.textContent = "Could not sign in. Try again in a moment."; err.hidden = false; })
-      .then(function () { $("joinBtn").disabled = false; });
-  });
-
-  out.addEventListener("click", function () {
-    fetch("/api/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ logout: true }), credentials: "same-origin" })
-      .then(showGate);
-  });
 
   // Redraw the picture on a canvas to drop EXIF data (GPS, camera, timestamps) before upload.
   function cleanImage(file) {
