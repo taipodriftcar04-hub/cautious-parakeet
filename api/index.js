@@ -360,6 +360,7 @@ module.exports = async function handler(req, res) {
         return res.status(401).json({ error: "Wrong username or password." });
       }
       await db.cmd("DEL", "rl:login:u:" + username);
+      await db.cmd("SADD", "users", user.name); // keeps the members list complete
       res.setHeader("Set-Cookie", sessionCookie(user));
       return res.status(200).json({ ok: true, user: user.name });
     }
@@ -963,13 +964,26 @@ module.exports = async function handler(req, res) {
 
   let users = [];
   let dbOk = true;
+  let dbErr = "";
   try {
-    const names = await db.cmd("SMEMBERS", "users");
-    if (names && names.length) {
-      const raws = await db.cmd("MGET", ...names.map((n) => "user:" + n));
+    // Find members two ways (the saved list, and a scan for every account record), then repair the list.
+    const listed = new Set((await db.cmd("SMEMBERS", "users")) || []);
+    const names = new Set(listed);
+    let cursor = "0";
+    let guard = 0;
+    do {
+      const r = await db.cmd("SCAN", cursor, "MATCH", "user:*", "COUNT", "200");
+      cursor = String(r[0]);
+      (r[1] || []).forEach((k) => names.add(String(k).slice(5)));
+      guard++;
+    } while (cursor !== "0" && guard < 50);
+    const all = [...names].filter((n) => NAME_RE.test(n));
+    if (all.length) {
+      const raws = await db.cmd("MGET", ...all.map((n) => "user:" + n));
       users = raws.filter(Boolean).map((r) => JSON.parse(r)).sort((a, b) => String(b.created).localeCompare(String(a.created)));
     }
-  } catch (e) { dbOk = false; }
+    for (const u of users) if (!listed.has(u.name)) await db.cmd("SADD", "users", u.name);
+  } catch (e) { dbOk = false; dbErr = String((e && e.message) || e).slice(0, 160); }
 
   const userCard = (u) => `<div class="c" data-kind="user" data-user="${esc(u.name)}">
       <div><strong>@${esc(u.name)}</strong><br><small>Joined ${esc(String(u.created || "").slice(0, 10))}</small></div>
@@ -1047,7 +1061,7 @@ module.exports = async function handler(req, res) {
 <div class="g">${reports.map(reportCard).join("") || "<p>No reports.</p>"}</div>
 
 <h2>Members (${users.length})</h2>
-${dbOk ? "" : "<p><strong>The member database is not connected yet.</strong> In Vercel, open Storage, create an Upstash Redis database and connect it to this project, then redeploy.</p>"}
+${dbOk ? "" : "<p><strong>The member database is not connected yet, or it returned an error.</strong> Detail: " + esc(dbErr) + ". In Vercel, open Storage, create an Upstash Redis database and connect it to this project, then redeploy.</p>"}
 <p>Members create their own account with an invite code. If someone forgets their password, press Reset password, then send them the temporary password shown. They can change it after signing in. Remove deletes the account and signs them out everywhere.</p>
 <div class="g">${users.map(userCard).join("") || "<p>No members yet.</p>"}</div>
 
