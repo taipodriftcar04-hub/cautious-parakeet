@@ -11,8 +11,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Orbweave">
-<title>Orbweave: a private community for sharing and messaging</title>
-<meta name="description" content="Orbweave is a small private community. Members share pictures and message each other directly. No ads, no public profiles, no tracking cookies.">
+<title>Orbweave: new products every day</title>
+<meta name="description" content="New products posted every day. Add what you like to your cart, send your order, and we contact you to arrange payment and delivery.">
 <script>
   window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
 </script>
@@ -67,7 +67,7 @@
   h3 { font-size: 1.3rem; }
   p { margin: 0 0 1em; }
 
-  .hero { display: grid; grid-template-columns: 1fr 1.15fr; gap: 48px; align-items: center; padding: 40px 0 88px; }
+  .hero { display: grid; grid-template-columns: 1fr; gap: 48px; align-items: center; padding: 40px 0 88px; max-width: 720px; }
   .hero .lead { font-size: 1.15rem; color: var(--muted); max-width: 44ch; margin-top: 22px; }
   .hero-cta { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 30px; }
   .btn { display: inline-block; padding: 13px 22px; border-radius: 999px; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; border: 2px solid var(--thread); background: var(--thread); color: #fff; }
@@ -117,9 +117,6 @@
   .list b { display: block; font-family: "Iowan Old Style", Palatino, Georgia, serif; font-size: 1.2rem; }
   .list span { color: var(--muted); }
 
-  form.invite { margin-top: 28px; display: grid; gap: 14px; max-width: 460px; }
-  form.invite input { font: inherit; padding: 13px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); width: 100%; }
-  form.invite small { color: var(--muted); }
   .confirm { margin-top: 18px; padding: 14px 16px; border-radius: 12px; border: 1.5px solid var(--thread); background: var(--thread-soft); max-width: 460px; }
   .confirm[hidden] { display: none; }
 
@@ -133,11 +130,30 @@
   .product .when { color: var(--muted); font-size: 0.85rem; }
   .product .actions { margin-top: auto; padding-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
   .product .btn { padding: 9px 18px; font-size: 0.95rem; }
-  .order-form { margin-top: 12px; display: grid; gap: 10px; }
-  .order-form[hidden] { display: none; }
-  .order-form label { font-weight: 600; font-size: 0.9rem; display: grid; gap: 4px; }
-  .order-form input, .order-form textarea { font: inherit; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); font-weight: 400; }
-  .order-form small { color: var(--muted); }
+  .cartbtn { margin-left: 22px; font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 999px; border: 1.5px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+  .cartbtn[hidden] { display: none; }
+  .cartbtn .n { display: inline-block; min-width: 1.5em; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--thread); color: #fff; font-size: 0.8rem; text-align: center; }
+  @media (prefers-color-scheme: dark) { .cartbtn .n { color: #12142b; } }
+  dialog#cartDlg { border: 1.5px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--ink); padding: 0; width: min(580px, 94vw); max-height: 90vh; }
+  dialog#cartDlg::backdrop { background: rgba(10, 12, 30, 0.6); }
+  .cart-in { padding: 20px; overflow-y: auto; max-height: 90vh; }
+  .cart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .cart-head h2 { font-size: 1.6rem; }
+  .cart-row { display: grid; grid-template-columns: 56px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1.5px solid var(--line); }
+  .cart-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; background: var(--bg); }
+  .cart-row .nm { font-weight: 600; }
+  .cart-row .pr { color: var(--muted); font-size: 0.9rem; }
+  .qty { display: inline-flex; align-items: center; gap: 6px; }
+  .qty button { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--line); background: transparent; color: var(--ink); font: inherit; font-size: 1.1rem; cursor: pointer; }
+  .qty span { min-width: 1.6em; text-align: center; font-weight: 600; }
+  .rm { background: none; border: 0; color: var(--alert); font: inherit; font-size: 0.85rem; cursor: pointer; padding: 4px 0 0; text-decoration: underline; }
+  .cart-total { display: flex; justify-content: space-between; font-weight: 700; font-size: 1.1rem; padding: 14px 0 4px; }
+  .cart-note { color: var(--muted); font-size: 0.9rem; margin: 4px 0 14px; }
+  .cart-form { display: grid; gap: 10px; margin-top: 10px; }
+  .cart-form label { font-weight: 600; font-size: 0.9rem; display: grid; gap: 4px; }
+  .cart-form input, .cart-form textarea { font: inherit; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); font-weight: 400; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-weight: 600; font-size: 0.95rem; z-index: 50; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+  .toast[hidden] { display: none; }
   .order-msg { font-size: 0.93rem; }
   .order-msg.ok { color: var(--thread); font-weight: 600; }
   .order-msg.err { color: var(--alert); font-weight: 600; }
@@ -183,41 +199,22 @@
       <a href="#how">How it works</a>
       <a href="#knows">Who sees what</a>
       <a href="#promises">Promises</a>
-      <a href="#wall">The wall</a>
-      <a class="keep" href="/members.html">Member sign in</a>
-      <a class="keep" id="navJoin" href="/members.html">Join</a>
+      <a class="keep" href="#wall">The wall</a>
+      <button class="cartbtn keep" id="cartBtn" type="button" aria-label="Open your cart" hidden>Cart<span class="n" id="cartCount">0</span></button>
     </nav>
   </header>
 
   <main>
     <div class="hero">
       <div>
-        <h1>A private space for sharing and messaging.</h1>
-        <p class="lead">Orbweave is a small private community. Members share pictures and message each other directly. No ads, no public profiles, and no tracking cookies.</p>
+        <h1>New products, posted every day.</h1>
+        <p class="lead">Browse what is new, add what you like to your cart, and send your order. We contact you directly to arrange payment and delivery. No ads and no tracking cookies.</p>
         <div class="hero-cta">
-          <a class="btn" id="heroJoin" href="/members.html">Create a free account</a>
-          <a class="btn ghost" href="#how">See how it works</a>
+          <a class="btn" href="#how">How it works</a>
+          <a class="btn ghost" href="#wall">Share a picture</a>
           <button class="btn ghost" id="installBtn" type="button" hidden>Install app</button>
         </div>
         <p id="iosHint" style="display:none;margin-top:14px;color:var(--muted);font-size:0.95rem;max-width:44ch">To install on iPhone: tap the Share button in Safari, then Add to Home Screen.</p>
-      </div>
-
-      <div class="demo" aria-labelledby="demo-label">
-        <label for="msg" id="demo-label">Illustration: how a message can pass through three relays</label>
-        <div class="row">
-          <input type="text" id="msg" value="Meet at the usual place at 8" maxlength="60" autocomplete="off">
-          <button id="send" type="button">Send</button>
-        </div>
-        <svg class="web" viewBox="0 0 480 190" role="img" aria-label="Diagram: a message travels from You through Relay A, Relay B and Relay C to Friend.">
-          <g id="edges"></g>
-          <g id="nodes"></g>
-          <circle class="packet" id="packet" r="7" cx="40" cy="95" opacity="0"></circle>
-        </svg>
-        <div class="readout" id="readout" aria-live="polite">
-          <strong>Ready.</strong>
-          <span class="sees">Press Send and watch what each relay is able to see.</span>
-        </div>
-        <p style="margin:14px 0 0;color:var(--muted);font-size:0.9rem">This is only an illustration of private routing. Orbweave does not route messages this way. Messages between members are stored on our server and can be read only by the two people in the conversation.</p>
       </div>
     </div>
   </main>
@@ -235,16 +232,16 @@
     <h2>How it works</h2>
     <ol class="steps">
       <li>
-        <h3>Create your account</h3>
-        <p>Choose a username and a password. It takes a minute and needs no email address.</p>
+        <h3>See what is new</h3>
+        <p>A new product goes up every day. The newest ones are always at the top of the page.</p>
       </li>
       <li>
-        <h3>Share pictures</h3>
-        <p>Post pictures for other members to see. A person looks at every picture before it appears.</p>
+        <h3>Fill your cart</h3>
+        <p>Tap Add to cart on anything you like, then open your cart to check it and send your order with your name and contact.</p>
       </li>
       <li>
-        <h3>Message members</h3>
-        <p>Send private messages to other members. Install Orbweave on your home screen to open it like an app.</p>
+        <h3>We arrange the rest</h3>
+        <p>We contact you directly to agree payment and delivery. You never pay on this website and never need an account.</p>
       </li>
     </ol>
   </div>
@@ -261,10 +258,9 @@
         <tr><th scope="col">Who</th><th scope="col">Can see</th><th scope="col">Cannot see</th></tr>
       </thead>
       <tbody>
-        <tr><th scope="row">Visitors</th><td class="yes">Products and wall pictures we approved</td><td class="no">Anything in the members area</td></tr>
-        <tr><th scope="row">Other members</th><td class="yes">Your username and the pictures you post</td><td class="no">Your messages to other people, your password</td></tr>
-        <tr><th scope="row">The person you message</th><td class="yes">What you send them</td><td class="no">Your chats with anyone else</td></tr>
-        <tr><th scope="row">The site owner</th><td class="yes">Usernames and posted pictures. Chats only if a member reports them.</td><td class="no">Your password, which is stored scrambled</td></tr>
+        <tr><th scope="row">Visitors</th><td class="yes">Products and wall pictures we approved</td><td class="no">Your requests or contact details</td></tr>
+        <tr><th scope="row">The site owner</th><td class="yes">What you send: your name, contact and note, and pictures you submit</td><td class="no">Anything else about you. There are no accounts or profiles.</td></tr>
+        <tr><th scope="row">The hosting provider</th><td class="yes">Stores the site's data and could technically access it</td><td class="no">Nothing is sold or shared for ads</td></tr>
       </tbody>
     </table>
   </div>
@@ -274,13 +270,13 @@
   <div class="wrap split">
     <div>
       <h2>Our promises</h2>
-      <p style="color:var(--muted);margin-top:18px;max-width:42ch">Messages and pictures are kept on our hosting provider's servers and are not end-to-end encrypted. The site owner and the hosting provider could technically reach stored data. Within that limit, this is what we commit to.</p>
+      <p style="color:var(--muted);margin-top:18px;max-width:42ch">Requests and pictures are kept on our hosting provider's servers and are not end-to-end encrypted. Within that limit, this is what we commit to.</p>
     </div>
     <ul class="list">
       <li><b>No ads and no selling data</b><span>We run no ads and share nothing with advertisers.</span></li>
       <li><b>No tracking cookies</b><span>We count visits with privacy-friendly analytics that do not follow you around the web.</span></li>
       <li><b>Pictures are cleaned first</b><span>Location and camera details are removed from every picture in your browser before it uploads.</span></li>
-      <li><b>You can leave any time</b><span>Ask and we delete your account, your pictures and your messages.</span></li>
+      <li><b>Your details are used only for your order</b><span>We use what you send to arrange your order, then delete it. Ask and we delete it sooner.</span></li>
     </ul>
   </div>
 </section>
@@ -312,134 +308,26 @@
   </div>
 </section>
 
-<section class="band" id="join">
-  <div class="wrap">
-    <h2>Join Orbweave</h2>
-    <p style="color:var(--muted);margin-top:18px;max-width:46ch">Free to join. Pick a username and password and you can start sharing pictures and messaging other members.</p>
-    <p style="margin-top:22px"><a class="btn" href="/members.html">Create a free account</a></p>
-    <p style="margin-top:18px;color:var(--muted)">Already a member? <a href="/members.html">Sign in</a>.</p>
+<dialog id="cartDlg" aria-labelledby="cartTitle">
+  <div class="cart-in">
+    <div class="cart-head">
+      <h2 id="cartTitle">Your cart</h2>
+      <button class="btn ghost small" type="button" id="cartClose">Close</button>
+    </div>
+    <div id="cartBody"></div>
   </div>
-</section>
-
-<section class="band" id="invite" hidden>
-  <div class="wrap">
-    <h2>Orbweave is invite-only</h2>
-    <p style="color:var(--muted);margin-top:18px;max-width:46ch">We grow slowly. Leave your email and we'll send you an invite code when a spot opens.</p>
-    <form class="invite" id="inviteForm" novalidate>
-      <div>
-        <label for="contact" style="font-weight:600;display:block;margin-bottom:6px">Where should we send your invite?</label>
-        <input type="email" id="contact" name="contact" placeholder="you@example.com" autocomplete="email" required>
-      </div>
-      <div style="position:absolute;left:-9999px" aria-hidden="true">
-        <label>Leave this empty <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
-      </div>
-      <button class="btn" type="submit" id="inviteBtn">Request an invite</button>
-      <small>Used once to send your invite, then deleted.</small>
-    </form>
-    <p style="margin-top:18px;color:var(--muted)">Already a member, or have an invite code? <a href="/members.html">Sign in or create your account</a>.</p>
-    <div class="confirm" id="confirm" role="status" hidden>You're on the list. We'll email your invite when a spot opens.</div>
-    <div class="confirm" id="inviteError" role="alert" hidden style="border-color:var(--alert);background:transparent;color:var(--alert)">Something went wrong and your request was not sent. Try again in a moment.</div>
-  </div>
-</section>
+</dialog>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <footer>
   <div class="wrap">
-    <span>&copy; 2026 Orbweave. A private community.</span>
-    <span><a href="#how">How it works</a> &nbsp; <a href="#promises">Promises</a> &nbsp; <a href="/members.html">Members</a></span>
+    <span>&copy; 2026 Orbweave.</span>
+    <span><a href="#how">How it works</a> &nbsp; <a href="#promises">Promises</a> &nbsp; <a href="#wall">The wall</a></span>
   </div>
 </footer>
 
 <script>
 (function () {
-  var nodes = [
-    { id: "you",  label: "You",     x: 40,  y: 95 },
-    { id: "a",    label: "Relay A", x: 150, y: 45 },
-    { id: "b",    label: "Relay B", x: 250, y: 145 },
-    { id: "c",    label: "Relay C", x: 350, y: 45 },
-    { id: "them", label: "Friend",  x: 440, y: 95 }
-  ];
-  var info = [
-    null,
-    { t: "Relay A opens the outer layer", sees: "It sees that the message came from your address and must go to Relay B.", blind: "It cannot read the message or tell who it is finally for." },
-    { t: "Relay B opens the middle layer", sees: "It sees a packet from Relay A that must go to Relay C.", blind: "It cannot tell who sent it, who will get it, or what it says." },
-    { t: "Relay C opens the last layer", sees: "It sees that a packet from Relay B is for your friend.", blind: "It cannot tell who started it. The message is still sealed." },
-    { t: "Delivered", sees: "Only your friend can open the final layer and read the message.", blind: "No relay saw the full path. The route is now discarded." }
-  ];
-  var NS = "http://www.w3.org/2000/svg";
-  var edgesG = document.getElementById("edges");
-  var nodesG = document.getElementById("nodes");
-  var packet = document.getElementById("packet");
-  var readout = document.getElementById("readout");
-  var btn = document.getElementById("send");
-  var input = document.getElementById("msg");
-  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  function el(n, attrs) {
-    var e = document.createElementNS(NS, n);
-    for (var k in attrs) e.setAttribute(k, attrs[k]);
-    return e;
-  }
-  var edgeEls = [], nodeEls = [];
-  nodes.forEach(function (n, i) {
-    if (i < nodes.length - 1) {
-      var m = nodes[i + 1];
-      var e = el("path", { "class": "edge", d: "M" + n.x + " " + n.y + " L" + m.x + " " + m.y });
-      edgesG.appendChild(e); edgeEls.push(e);
-    }
-  });
-  nodes.forEach(function (n) {
-    var g = el("g", { "class": "node" });
-    g.appendChild(el("circle", { cx: n.x, cy: n.y, r: 20 }));
-    var t = el("text", { x: n.x, y: n.y + 38 });
-    t.textContent = n.label;
-    g.appendChild(t);
-    nodesG.appendChild(g); nodeEls.push(g);
-  });
-
-  function show(html) { readout.innerHTML = html; }
-  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
-  function reset() {
-    edgeEls.forEach(function (e) { e.classList.remove("lit"); });
-    nodeEls.forEach(function (g) { g.classList.remove("on"); });
-  }
-  function wait(ms) { return new Promise(function (r) { setTimeout(r, reduce ? 0 : ms); }); }
-  function move(from, to, ms) {
-    if (reduce) { packet.setAttribute("cx", to.x); packet.setAttribute("cy", to.y); return Promise.resolve(); }
-    return new Promise(function (resolve) {
-      var start = null;
-      function frame(ts) {
-        if (!start) start = ts;
-        var p = Math.min((ts - start) / ms, 1);
-        packet.setAttribute("cx", from.x + (to.x - from.x) * p);
-        packet.setAttribute("cy", from.y + (to.y - from.y) * p);
-        if (p < 1) requestAnimationFrame(frame); else resolve();
-      }
-      requestAnimationFrame(frame);
-    });
-  }
-
-  btn.addEventListener("click", async function () {
-    var text = input.value.trim() || "(empty message)";
-    btn.disabled = true;
-    if (window.va) window.va("event", { name: "demo_send" });
-    reset();
-    packet.setAttribute("opacity", "1");
-    packet.setAttribute("cx", nodes[0].x); packet.setAttribute("cy", nodes[0].y);
-    nodeEls[0].classList.add("on");
-    show("<strong>Sealing in three layers</strong><span class='sees'>\u201c" + esc(text) + "\u201d is encrypted on your device before it leaves.</span>");
-    await wait(900);
-    for (var i = 1; i < nodes.length; i++) {
-      await move(nodes[i - 1], nodes[i], 700);
-      edgeEls[i - 1].classList.add("lit");
-      nodeEls[i].classList.add("on");
-      var d = info[i];
-      show("<strong>" + d.t + "</strong><span class='sees'>" + d.sees + "</span><br><span class='blind'>" + d.blind + "</span>");
-      await wait(1400);
-    }
-    packet.setAttribute("opacity", "0");
-    btn.disabled = false;
-  });
-
   /* ---- Install as an app ---- */
   var deferredInstall = null;
   var installBtn = document.getElementById("installBtn");
@@ -462,6 +350,132 @@
     document.getElementById("iosHint").style.display = "block";
   }
 
+  /* ---- Cart ---- */
+  var CART_KEY = "orbweave_cart_v1";
+  var cart = [];
+  try {
+    var saved = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
+    if (Array.isArray(saved)) cart = saved.filter(function (i) { return i && i.id && i.qty >= 1; }).slice(0, 20);
+  } catch (e) { cart = []; }
+
+  var cartDlg = document.getElementById("cartDlg");
+  var cartBody = document.getElementById("cartBody");
+  var toastEl = document.getElementById("toast");
+  var toastTimer = null;
+
+  function showToast(text) {
+    toastEl.textContent = text; toastEl.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { toastEl.hidden = true; }, 1600);
+  }
+  function saveCart() {
+    try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) {}
+    var n = cart.reduce(function (t, i) { return t + i.qty; }, 0);
+    document.getElementById("cartCount").textContent = n;
+    if (n > 0) document.getElementById("cartBtn").hidden = false;
+  }
+  function priceNum(p) { var m = String(p || "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : null; }
+  function priceSym(p) { var m = String(p || "").trim().match(/^[^\d\s.,-]+/); return m ? m[0] : ""; }
+  function cartTotal() {
+    if (!cart.length) return "";
+    var sum = 0, sym = null;
+    for (var i = 0; i < cart.length; i++) {
+      var n = priceNum(cart[i].price); if (n === null) return "";
+      var s = priceSym(cart[i].price); if (sym === null) sym = s; else if (sym !== s) return "";
+      sum += n * cart[i].qty;
+    }
+    return sym + (sym.length > 1 ? " " : "") + sum.toFixed(2);
+  }
+  function addToCart(p) {
+    var line = null;
+    for (var i = 0; i < cart.length; i++) if (cart[i].id === p.image) line = cart[i];
+    if (line) line.qty = Math.min(99, line.qty + 1);
+    else {
+      if (cart.length >= 20) { showToast("Your cart is full (20 items)."); return; }
+      cart.push({ id: p.image, name: p.name, price: p.price || "", image: p.image, qty: 1 });
+    }
+    saveCart();
+    showToast("Added to your cart");
+    if (window.va) window.va("event", { name: "add_to_cart" });
+  }
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  function renderCart() {
+    cartBody.innerHTML = "";
+    if (!cart.length) {
+      cartBody.appendChild(el("p", "cart-note", "Your cart is empty."));
+      var keep = el("button", "btn", "Keep browsing"); keep.type = "button";
+      keep.addEventListener("click", function () { cartDlg.close(); });
+      cartBody.appendChild(keep);
+      return;
+    }
+    cart.forEach(function (it, idx) {
+      var row = el("div", "cart-row");
+      var im = el("img"); im.src = it.image; im.alt = ""; row.appendChild(im);
+      var mid = el("div");
+      mid.appendChild(el("div", "nm", it.name));
+      if (it.price) mid.appendChild(el("div", "pr", it.price));
+      var rm = el("button", "rm", "Remove"); rm.type = "button";
+      rm.addEventListener("click", function () { cart.splice(idx, 1); saveCart(); renderCart(); });
+      mid.appendChild(rm); row.appendChild(mid);
+      var q = el("div", "qty");
+      var minus = el("button", null, "\u2212"); minus.type = "button"; minus.setAttribute("aria-label", "One less " + it.name);
+      var num = el("span", null, String(it.qty));
+      var plus = el("button", null, "+"); plus.type = "button"; plus.setAttribute("aria-label", "One more " + it.name);
+      minus.addEventListener("click", function () { if (it.qty > 1) { it.qty--; saveCart(); renderCart(); } else { cart.splice(idx, 1); saveCart(); renderCart(); } });
+      plus.addEventListener("click", function () { if (it.qty < 99) { it.qty++; saveCart(); renderCart(); } });
+      q.appendChild(minus); q.appendChild(num); q.appendChild(plus); row.appendChild(q);
+      cartBody.appendChild(row);
+    });
+
+    var total = cartTotal();
+    var trow = el("div", "cart-total"); trow.appendChild(el("span", null, "Total")); trow.appendChild(el("span", null, total || "To be confirmed"));
+    cartBody.appendChild(trow);
+    cartBody.appendChild(el("p", "cart-note", "You do not pay here. We contact you to confirm the total, any delivery cost, and how to pay."));
+
+    var form = el("form", "cart-form"); form.noValidate = true;
+    form.innerHTML = '<label>Your name<input name="name" type="text" maxlength="80" autocomplete="name"></label>' +
+      '<label>Email or WhatsApp number<input name="contact" type="text" maxlength="120" autocomplete="off"></label>' +
+      '<label>Delivery address or area (optional)<input name="address" type="text" maxlength="200" autocomplete="street-address"></label>' +
+      '<label>Note (optional)<textarea name="message" maxlength="500" rows="3" placeholder="Size, colour, anything we should know"></textarea></label>' +
+      '<div style="position:absolute;left:-9999px" aria-hidden="true"><input name="website" type="text" tabindex="-1" autocomplete="off"></div>' +
+      '<button class="btn" type="submit">Send order</button>' +
+      '<div class="order-msg" role="status"></div>';
+    form.addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var msg = form.querySelector(".order-msg"); msg.className = "order-msg"; msg.textContent = "";
+      var nm = form.elements.name.value.trim(), ct = form.elements.contact.value.trim();
+      if (!nm) { msg.className = "order-msg err"; msg.textContent = "Enter your name."; form.elements.name.focus(); return; }
+      if (ct.length < 5) { msg.className = "order-msg err"; msg.textContent = "Enter an email or WhatsApp number so we can reach you."; form.elements.contact.focus(); return; }
+      var sb = form.querySelector("button[type=submit]"); sb.disabled = true;
+      try {
+        var r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: cart.map(function (i) { return { id: i.id, qty: i.qty, name: i.name }; }),
+            name: nm, contact: ct, address: form.elements.address.value, message: form.elements.message.value, website: form.elements.website.value
+          }) });
+        if (!r.ok) throw new Error(r.status === 429 ? "Too many orders in a short time. Try again later." : "Your order was not sent. Check your connection and try again.");
+        if (window.va) window.va("event", { name: "order_sent" });
+        cart = []; saveCart();
+        cartBody.innerHTML = "";
+        cartBody.appendChild(el("h3", null, "Order received"));
+        cartBody.appendChild(el("p", "cart-note", "Thank you, " + nm + ". We will contact you at " + ct + " to confirm the total and arrange payment and delivery."));
+        var done = el("button", "btn", "Close"); done.type = "button"; done.addEventListener("click", function () { cartDlg.close(); });
+        cartBody.appendChild(done);
+      } catch (e) { msg.className = "order-msg err"; msg.textContent = e.message || "Your order was not sent."; sb.disabled = false; }
+    });
+    cartBody.appendChild(form);
+  }
+
+  function openCart() {
+    renderCart();
+    if (typeof cartDlg.showModal === "function") { if (!cartDlg.open) cartDlg.showModal(); } else cartDlg.setAttribute("open", "");
+  }
+  document.getElementById("cartBtn").addEventListener("click", openCart);
+  document.getElementById("cartClose").addEventListener("click", function () { cartDlg.close(); });
+  cartDlg.addEventListener("click", function (ev) { if (ev.target === cartDlg) cartDlg.close(); });
+  saveCart();
+
   /* ---- Products (posted by the owner from the admin page) ---- */
   function loadProducts() {
     fetch("/api/products").then(function (r) { return r.ok ? r.json() : { products: [] }; }).then(function (d) {
@@ -480,45 +494,24 @@
           if (!isNaN(t)) { var w = document.createElement("div"); w.className = "when"; w.textContent = "Posted " + t.toLocaleDateString(undefined, { month: "short", day: "numeric" }); body.appendChild(w); }
         }
         var actions = document.createElement("div"); actions.className = "actions";
-        var ob = document.createElement("button"); ob.type = "button"; ob.className = "btn"; ob.textContent = "I want this";
+        var ob = document.createElement("button"); ob.type = "button"; ob.className = "btn"; ob.textContent = "Add to cart";
         actions.appendChild(ob);
         if (p.link && /^https?:\/\//i.test(p.link)) {
           var a = document.createElement("a"); a.className = "btn ghost"; a.href = p.link; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "View product"; actions.appendChild(a);
         }
         body.appendChild(actions);
-        var of = document.createElement("form"); of.className = "order-form"; of.hidden = true; of.noValidate = true;
-        of.innerHTML = '<label>Your name<input name="name" type="text" maxlength="80" autocomplete="name"></label>' +
-          '<label>Email or WhatsApp number<input name="contact" type="text" maxlength="120" autocomplete="off"></label>' +
-          '<label>Message (optional)<textarea name="message" maxlength="500" rows="3" placeholder="Quantity, size, delivery address..."></textarea></label>' +
-          '<div style="position:absolute;left:-9999px" aria-hidden="true"><input name="website" type="text" tabindex="-1" autocomplete="off"></div>' +
-          '<button class="btn" type="submit">Send request</button>' +
-          '<small>Your details go only to the seller.</small>' +
-          '<div class="order-msg" role="status"></div>';
-        body.appendChild(of);
-        ob.addEventListener("click", function () { of.hidden = !of.hidden; if (!of.hidden) of.elements.name.focus(); });
-        (function (productName, formEl) {
-          formEl.addEventListener("submit", async function (ev) {
-            ev.preventDefault();
-            var msg = formEl.querySelector(".order-msg"); msg.className = "order-msg"; msg.textContent = "";
-            var nm = formEl.elements.name.value.trim(), ct = formEl.elements.contact.value.trim();
-            if (!nm) { msg.className = "order-msg err"; msg.textContent = "Enter your name."; formEl.elements.name.focus(); return; }
-            if (ct.length < 5) { msg.className = "order-msg err"; msg.textContent = "Enter an email or WhatsApp number so the seller can reply."; formEl.elements.contact.focus(); return; }
-            var sb = formEl.querySelector("button[type=submit]"); sb.disabled = true;
-            try {
-              var r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ product: productName, name: nm, contact: ct, message: formEl.elements.message.value, website: formEl.elements.website.value }) });
-              if (!r.ok) throw new Error(r.status === 429 ? "Too many requests. Try again later." : "Your request was not sent. Try again in a moment.");
-              if (window.va) window.va("event", { name: "order_request" });
-              msg.className = "order-msg ok"; msg.textContent = "Request sent. The seller will contact you.";
-              formEl.reset();
-            } catch (e) { msg.className = "order-msg err"; msg.textContent = e.message || "Your request was not sent."; }
-            finally { sb.disabled = false; }
+        (function (prod, btn) {
+          btn.addEventListener("click", function () {
+            addToCart(prod);
+            btn.textContent = "Added \u2713";
+            setTimeout(function () { btn.textContent = "Add to cart"; }, 1400);
           });
-        })(p.name, of);
+        })(p, ob);
         card.appendChild(img); card.appendChild(body); grid.appendChild(card);
       });
       document.getElementById("products").hidden = false;
       document.getElementById("navProducts").hidden = false;
+      document.getElementById("cartBtn").hidden = false;
     }).catch(function () {});
   }
   loadProducts();
@@ -610,42 +603,6 @@
     }).catch(function () { wallEmpty.hidden = false; });
   }
   loadWall();
-
-  /* ---- Open sign-up or invite-only (set by the owner in Vercel) ---- */
-  fetch("/api/account?info=1").then(function (r) { return r.json(); }).then(function (d) {
-    if (!d.inviteRequired) return;
-    document.getElementById("join").hidden = true;
-    document.getElementById("invite").hidden = false;
-    var hj = document.getElementById("heroJoin"); hj.href = "#invite"; hj.textContent = "Request an invite";
-    var nj = document.getElementById("navJoin"); nj.href = "#invite"; nj.textContent = "Request an invite";
-  }).catch(function () {});
-
-  var form = document.getElementById("inviteForm");
-  var confirmBox = document.getElementById("confirm");
-  var errorBox = document.getElementById("inviteError");
-  var inviteBtn = document.getElementById("inviteBtn");
-  form.addEventListener("submit", async function (ev) {
-    ev.preventDefault();
-    var c = document.getElementById("contact");
-    if (!c.value || c.value.indexOf("@") < 1) { c.focus(); c.setCustomValidity("Enter a valid email address."); c.reportValidity(); c.setCustomValidity(""); return; }
-    confirmBox.hidden = true; errorBox.hidden = true;
-    inviteBtn.disabled = true;
-    try {
-      var res = await fetch("/api/invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: c.value.trim(), website: form.elements.website.value })
-      });
-      if (!res.ok) throw new Error("bad status");
-      if (window.va) window.va("event", { name: "invite_request" });
-      confirmBox.hidden = false;
-      form.reset();
-    } catch (e) {
-      errorBox.hidden = false;
-    } finally {
-      inviteBtn.disabled = false;
-    }
-  });
 })();
 </script>
 <script>
