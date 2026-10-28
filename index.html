@@ -196,9 +196,6 @@
     </a>
     <nav aria-label="Main">
       <a href="#products" id="navProducts" hidden>Products</a>
-      <a href="#how">How it works</a>
-      <a href="#knows">Who sees what</a>
-      <a href="#promises">Promises</a>
       <a class="keep" href="#wall">The wall</a>
       <button class="cartbtn keep" id="cartBtn" type="button" aria-label="Open your cart" hidden>Cart<span class="n" id="cartCount">0</span></button>
     </nav>
@@ -208,9 +205,9 @@
     <div class="hero">
       <div>
         <h1>New products, posted every day.</h1>
-        <p class="lead">Browse what is new, add what you like to your cart, and send your order. We contact you directly to arrange payment and delivery. No ads and no tracking cookies.</p>
+        <p class="lead">Add what you like to your cart and send your order. We contact you to arrange payment and delivery.</p>
         <div class="hero-cta">
-          <a class="btn" href="#how">How it works</a>
+          <a class="btn" href="#products" id="shopBtn" hidden>See what is new</a>
           <a class="btn ghost" href="#wall">Share a picture</a>
           <button class="btn ghost" id="installBtn" type="button" hidden>Install app</button>
         </div>
@@ -224,60 +221,6 @@
   <div class="wrap">
     <h2>New products</h2>
     <div class="products" id="productGrid"></div>
-  </div>
-</section>
-
-<section class="band" id="how">
-  <div class="wrap">
-    <h2>How it works</h2>
-    <ol class="steps">
-      <li>
-        <h3>See what is new</h3>
-        <p>A new product goes up every day. The newest ones are always at the top of the page.</p>
-      </li>
-      <li>
-        <h3>Fill your cart</h3>
-        <p>Tap Add to cart on anything you like, then open your cart to check it and send your order with your name and contact.</p>
-      </li>
-      <li>
-        <h3>We arrange the rest</h3>
-        <p>We contact you directly to agree payment and delivery. You never pay on this website and never need an account.</p>
-      </li>
-    </ol>
-  </div>
-</section>
-
-<section id="knows">
-  <div class="wrap split">
-    <div>
-      <h2>Who can see what</h2>
-      <p style="color:var(--muted);margin-top:18px;max-width:42ch">We would rather tell you exactly how this works than promise more than we can deliver.</p>
-    </div>
-    <table>
-      <thead>
-        <tr><th scope="col">Who</th><th scope="col">Can see</th><th scope="col">Cannot see</th></tr>
-      </thead>
-      <tbody>
-        <tr><th scope="row">Visitors</th><td class="yes">Products and wall pictures we approved</td><td class="no">Your requests or contact details</td></tr>
-        <tr><th scope="row">The site owner</th><td class="yes">What you send: your name, contact and note, and pictures you submit</td><td class="no">Anything else about you. There are no accounts or profiles.</td></tr>
-        <tr><th scope="row">The hosting provider</th><td class="yes">Stores the site's data and could technically access it</td><td class="no">Nothing is sold or shared for ads</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section class="band" id="promises">
-  <div class="wrap split">
-    <div>
-      <h2>Our promises</h2>
-      <p style="color:var(--muted);margin-top:18px;max-width:42ch">Requests and pictures are kept on our hosting provider's servers and are not end-to-end encrypted. Within that limit, this is what we commit to.</p>
-    </div>
-    <ul class="list">
-      <li><b>No ads and no selling data</b><span>We run no ads and share nothing with advertisers.</span></li>
-      <li><b>No tracking cookies</b><span>We count visits with privacy-friendly analytics that do not follow you around the web.</span></li>
-      <li><b>Pictures are cleaned first</b><span>Location and camera details are removed from every picture in your browser before it uploads.</span></li>
-      <li><b>Your details are used only for your order</b><span>We use what you send to arrange your order, then delete it. Ask and we delete it sooner.</span></li>
-    </ul>
   </div>
 </section>
 
@@ -322,7 +265,7 @@
 <footer>
   <div class="wrap">
     <span>&copy; 2026 Orbweave.</span>
-    <span><a href="#how">How it works</a> &nbsp; <a href="#promises">Promises</a> &nbsp; <a href="#wall">The wall</a></span>
+    <span>Details you send are used only to arrange your order.</span>
   </div>
 </footer>
 
@@ -512,6 +455,7 @@
       document.getElementById("products").hidden = false;
       document.getElementById("navProducts").hidden = false;
       document.getElementById("cartBtn").hidden = false;
+      document.getElementById("shopBtn").hidden = false;
     }).catch(function () {});
   }
   loadProducts();
