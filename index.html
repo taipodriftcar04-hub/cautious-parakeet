@@ -208,7 +208,7 @@
         <p class="lead">Add what you like to your cart and send your order. We contact you to arrange payment and delivery.</p>
         <div class="hero-cta">
           <a class="btn" href="#products" id="shopBtn" hidden>See what is new</a>
-          <a class="btn ghost" href="#wall">Share a picture</a>
+          <a class="btn ghost" href="#wall">See the wall</a>
           <button class="btn ghost" id="installBtn" type="button" hidden>Install app</button>
         </div>
         <p id="iosHint" style="display:none;margin-top:14px;color:var(--muted);font-size:0.95rem;max-width:44ch">To install on iPhone: tap the Share button in Safari, then Add to Home Screen.</p>
@@ -227,27 +227,8 @@
 <section id="wall">
   <div class="wrap">
     <h2>The wall</h2>
-    <p style="color:var(--muted);margin-top:18px;max-width:46ch">Post a picture for everyone who visits. Every photo is cleaned of hidden location and camera data in your browser before it uploads, and a person reviews it before it appears.</p>
-    <form class="wall-tools" id="wallForm" novalidate>
-      <div>
-        <label for="pic" style="font-weight:600;display:block;margin-bottom:6px">Choose a picture (JPG, PNG or WebP)</label>
-        <input type="file" id="pic" accept="image/jpeg,image/png,image/webp">
-      </div>
-      <img class="preview" id="preview" alt="Preview of your picture" hidden>
-      <div style="position:absolute;left:-9999px" aria-hidden="true">
-        <label>Leave this empty <input type="text" id="wallWebsite" tabindex="-1" autocomplete="off"></label>
-      </div>
-      <label style="display:flex;gap:10px;align-items:flex-start;font-size:0.95rem">
-        <input type="checkbox" id="wallOk" style="margin-top:5px">
-        <span>I took this picture or have the right to share it. It shows nothing illegal and no one who hasn't agreed to be shown.</span>
-      </label>
-      <button class="btn" type="submit" id="wallBtn">Post picture</button>
-      <small>Pictures are published only after review, and we remove anything that breaks these rules.</small>
-    </form>
-    <div class="confirm" id="wallDone" role="status" hidden>Picture received. It will appear on the wall after review.</div>
-    <div class="confirm" id="wallError" role="alert" hidden style="border-color:var(--alert);background:transparent;color:var(--alert)"></div>
     <div class="wall-grid" id="wallGrid" aria-live="polite"></div>
-    <div class="wall-empty" id="wallEmpty" hidden>The wall is empty. Be the first to post a picture.</div>
+    <div class="wall-empty" id="wallEmpty" hidden>No pictures yet. Check back soon.</div>
   </div>
 </section>
 
@@ -374,7 +355,7 @@
     var total = cartTotal();
     var trow = el("div", "cart-total"); trow.appendChild(el("span", null, "Total")); trow.appendChild(el("span", null, total || "To be confirmed"));
     cartBody.appendChild(trow);
-    cartBody.appendChild(el("p", "cart-note", "You do not pay here. We contact you to confirm the total, any delivery cost, and how to pay."));
+    cartBody.appendChild(el("p", "cart-note", "Pay by card now (secure Stripe page), or send the order and we will contact you to arrange payment and delivery."));
 
     var form = el("form", "cart-form"); form.noValidate = true;
     form.innerHTML = '<label>Your name<input name="name" type="text" maxlength="80" autocomplete="name"></label>' +
@@ -382,7 +363,8 @@
       '<label>Delivery address or area (optional)<input name="address" type="text" maxlength="200" autocomplete="street-address"></label>' +
       '<label>Note (optional)<textarea name="message" maxlength="500" rows="3" placeholder="Size, colour, anything we should know"></textarea></label>' +
       '<div style="position:absolute;left:-9999px" aria-hidden="true"><input name="website" type="text" tabindex="-1" autocomplete="off"></div>' +
-      '<button class="btn" type="submit">Send order</button>' +
+      '<button class="btn" type="button" id="payBtn">Pay by card</button>' +
+      '<button class="btn ghost" type="submit">Send order, pay later</button>' +
       '<div class="order-msg" role="status"></div>';
     form.addEventListener("submit", async function (ev) {
       ev.preventDefault();
@@ -390,7 +372,7 @@
       var nm = form.elements.name.value.trim(), ct = form.elements.contact.value.trim();
       if (!nm) { msg.className = "order-msg err"; msg.textContent = "Enter your name."; form.elements.name.focus(); return; }
       if (ct.length < 5) { msg.className = "order-msg err"; msg.textContent = "Enter an email or WhatsApp number so we can reach you."; form.elements.contact.focus(); return; }
-      var sb = form.querySelector("button[type=submit]"); sb.disabled = true;
+      var sb = form.querySelector("button[type=submit]"); sb.disabled = true; form.querySelector("#payBtn").disabled = true;
       try {
         var r = await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -405,7 +387,25 @@
         cartBody.appendChild(el("p", "cart-note", "Thank you, " + nm + ". We will contact you at " + ct + " to confirm the total and arrange payment and delivery."));
         var done = el("button", "btn", "Close"); done.type = "button"; done.addEventListener("click", function () { cartDlg.close(); });
         cartBody.appendChild(done);
-      } catch (e) { msg.className = "order-msg err"; msg.textContent = e.message || "Your order was not sent."; sb.disabled = false; }
+      } catch (e) { msg.className = "order-msg err"; msg.textContent = e.message || "Your order was not sent."; sb.disabled = false; form.querySelector("#payBtn").disabled = false; }
+    });
+    form.querySelector("#payBtn").addEventListener("click", async function () {
+      var msg = form.querySelector(".order-msg"); msg.className = "order-msg"; msg.textContent = "";
+      var nm = form.elements.name.value.trim(), ct = form.elements.contact.value.trim();
+      if (!nm) { msg.className = "order-msg err"; msg.textContent = "Enter your name."; form.elements.name.focus(); return; }
+      if (ct.length < 5) { msg.className = "order-msg err"; msg.textContent = "Enter an email or WhatsApp number so we can reach you."; form.elements.contact.focus(); return; }
+      var pb = form.querySelector("#payBtn"), sb2 = form.querySelector("button[type=submit]");
+      pb.disabled = true; sb2.disabled = true; pb.textContent = "Opening secure payment...";
+      try {
+        var r = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: cart.map(function (i) { return { id: i.id, qty: i.qty, name: i.name }; }),
+            name: nm, contact: ct, address: form.elements.address.value, message: form.elements.message.value, website: form.elements.website.value
+          }) });
+        var d = {}; try { d = await r.json(); } catch (x) {}
+        if (!r.ok || !d.url || d.url.indexOf("https://checkout.stripe.com/") !== 0) throw new Error(r.status === 503 ? "Card payment is not switched on yet. Use Send order, pay later." : (d.error || "Could not start the card payment. Try again, or use Send order."));
+        window.location.href = d.url;
+      } catch (e) { msg.className = "order-msg err"; msg.textContent = e.message; pb.disabled = false; sb2.disabled = false; pb.textContent = "Pay by card"; }
     });
     cartBody.appendChild(form);
   }
@@ -418,6 +418,31 @@
   document.getElementById("cartClose").addEventListener("click", function () { cartDlg.close(); });
   cartDlg.addEventListener("click", function (ev) { if (ev.target === cartDlg) cartDlg.close(); });
   saveCart();
+
+  /* ---- Coming back from the card payment page ---- */
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var paid = q.get("paid"), cancelled = q.get("cancelled");
+    if (!paid && !cancelled) return;
+    history.replaceState(null, "", location.pathname + location.hash);
+    if (cancelled) { showToast("Payment cancelled. Your cart is still here."); return; }
+    if (!/^cs_[A-Za-z0-9_]+$/.test(paid)) return;
+    fetch("/api/checkout?session_id=" + encodeURIComponent(paid)).then(function (r) { return r.json(); }).then(function (d) {
+      cartBody.innerHTML = "";
+      if (d && d.paid) {
+        cart = []; saveCart();
+        cartBody.appendChild(el("h3", null, "Payment received"));
+        cartBody.appendChild(el("p", "cart-note", "Thank you. " + (d.total || "") + " was paid by card. We will contact you to arrange delivery."));
+        if (window.va) window.va("event", { name: "card_paid" });
+      } else {
+        cartBody.appendChild(el("h3", null, "Payment not completed"));
+        cartBody.appendChild(el("p", "cart-note", (d && d.error) || "We could not confirm a payment. If you were charged, we will see it and contact you. Your cart is still saved."));
+      }
+      var done = el("button", "btn", "Close"); done.type = "button"; done.addEventListener("click", function () { cartDlg.close(); });
+      cartBody.appendChild(done);
+      if (typeof cartDlg.showModal === "function") { if (!cartDlg.open) cartDlg.showModal(); } else cartDlg.setAttribute("open", "");
+    }).catch(function () { showToast("Could not check your payment. If you were charged, we will see it and contact you."); });
+  })();
 
   /* ---- Products (posted by the owner from the admin page) ---- */
   function loadProducts() {
@@ -460,80 +485,9 @@
   }
   loadProducts();
 
-  /* ---- The wall ---- */
-  var wallForm = document.getElementById("wallForm");
-  var picInput = document.getElementById("pic");
-  var preview = document.getElementById("preview");
-  var wallBtn = document.getElementById("wallBtn");
-  var wallDone = document.getElementById("wallDone");
-  var wallError = document.getElementById("wallError");
+  /* ---- The wall (only the owner posts pictures) ---- */
   var wallGrid = document.getElementById("wallGrid");
   var wallEmpty = document.getElementById("wallEmpty");
-  var cleanBlob = null;
-
-  function wallFail(msg) { wallError.textContent = msg; wallError.hidden = false; wallDone.hidden = true; }
-
-  // Redraw the picture on a canvas and export a new JPEG. This drops EXIF data
-  // (GPS location, camera model, timestamps) before anything leaves the device.
-  function cleanImage(file) {
-    return new Promise(function (resolve, reject) {
-      var url = URL.createObjectURL(file);
-      var img = new Image();
-      img.onload = function () {
-        var max = 1600, w = img.naturalWidth, h = img.naturalHeight;
-        var scale = Math.min(1, max / Math.max(w, h));
-        var c = document.createElement("canvas");
-        c.width = Math.round(w * scale); c.height = Math.round(h * scale);
-        var ctx = c.getContext("2d");
-        ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
-        ctx.drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url);
-        c.toBlob(function (b) { b ? resolve(b) : reject(new Error("encode")); }, "image/jpeg", 0.85);
-      };
-      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("load")); };
-      img.src = url;
-    });
-  }
-
-  picInput.addEventListener("change", async function () {
-    cleanBlob = null; preview.hidden = true; wallError.hidden = true; wallDone.hidden = true;
-    var f = picInput.files[0];
-    if (!f) return;
-    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { wallFail("Choose a JPG, PNG or WebP picture."); picInput.value = ""; return; }
-    if (f.size > 15 * 1024 * 1024) { wallFail("That picture is over 15 MB. Choose a smaller one."); picInput.value = ""; return; }
-    try {
-      cleanBlob = await cleanImage(f);
-      if (cleanBlob.size > 2 * 1024 * 1024) { cleanBlob = null; wallFail("That picture is still too large after shrinking. Choose a simpler one."); picInput.value = ""; return; }
-      preview.src = URL.createObjectURL(cleanBlob);
-      preview.hidden = false;
-    } catch (e) {
-      wallFail("We couldn't read that picture. Try another file.");
-      picInput.value = "";
-    }
-  });
-
-  wallForm.addEventListener("submit", async function (ev) {
-    ev.preventDefault();
-    wallError.hidden = true; wallDone.hidden = true;
-    if (!cleanBlob) { wallFail("Choose a picture first."); picInput.focus(); return; }
-    if (!document.getElementById("wallOk").checked) { wallFail("Tick the box to confirm you have the right to share this picture."); return; }
-    if (document.getElementById("wallWebsite").value) { wallDone.hidden = false; return; }
-    wallBtn.disabled = true;
-    try {
-      var res = await fetch("/api/upload", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: cleanBlob });
-      if (!res.ok) {
-        var msg = res.status === 413 ? "That picture is too large." : res.status === 429 ? "Too many pictures. Try again later." : "Your picture was not posted. Try again in a moment.";
-        throw new Error(msg);
-      }
-      if (window.va) window.va("event", { name: "wall_upload" });
-      wallDone.hidden = false;
-      wallForm.reset(); preview.hidden = true; cleanBlob = null;
-    } catch (e) {
-      wallFail(e.message && e.message.indexOf("picture") > -1 ? e.message : "Your picture was not posted. Try again in a moment.");
-    } finally {
-      wallBtn.disabled = false;
-    }
-  });
 
   function loadWall() {
     fetch("/api/wall").then(function (r) { return r.ok ? r.json() : { images: [] }; }).then(function (d) {
@@ -541,7 +495,7 @@
       wallEmpty.hidden = list.length > 0;
       list.forEach(function (u) {
         var im = document.createElement("img");
-        im.src = u; im.alt = "Picture posted by a visitor"; im.loading = "lazy";
+        im.src = u; im.alt = "Picture on the wall"; im.loading = "lazy";
         wallGrid.appendChild(im);
       });
     }).catch(function () { wallEmpty.hidden = false; });

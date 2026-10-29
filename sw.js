@@ -1,6 +1,6 @@
 // Orbweave service worker: lets the site install like an app and open even with a weak connection.
 // It never stores live data (anything under /api/ always goes to the network).
-const CACHE = "orbweave-v2"; // new name clears the old saved pages, including the removed members page
+const CACHE = "orbweave-v3"; // new name clears the old saved pages, including the removed members page
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
