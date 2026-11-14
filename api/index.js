@@ -740,6 +740,7 @@ async function create(req, res) {
 
 async function confirm(req, res) {
   const id = String((req.query && req.query.session_id) || "");
+  if (!id) return res.status(200).json({ card: enabled() }); // lets the page know whether to show "Pay by card"
   if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(id)) return res.status(400).json({ error: "Bad request." });
   if (limited("confirm:" + clientIp(req), 30, 10 * 60 * 1000)) return res.status(429).json({ error: "Too many requests." });
   if (!enabled()) return res.status(503).json({ error: "Card payments are not switched on yet." });
