@@ -355,7 +355,7 @@
     var total = cartTotal();
     var trow = el("div", "cart-total"); trow.appendChild(el("span", null, "Total")); trow.appendChild(el("span", null, total || "To be confirmed"));
     cartBody.appendChild(trow);
-    cartBody.appendChild(el("p", "cart-note", "Pay by card now (secure Stripe page), or send the order and we will contact you to arrange payment and delivery."));
+    cartBody.appendChild(el("p", "cart-note", cardOn ? "Pay by card now (secure Stripe page), or send the order and we will contact you to arrange payment and delivery." : "Send your order and we will contact you to arrange payment and delivery."));
 
     var form = el("form", "cart-form"); form.noValidate = true;
     form.innerHTML = '<label>Your name<input name="name" type="text" maxlength="80" autocomplete="name"></label>' +
@@ -363,8 +363,8 @@
       '<label>Delivery address or area (optional)<input name="address" type="text" maxlength="200" autocomplete="street-address"></label>' +
       '<label>Note (optional)<textarea name="message" maxlength="500" rows="3" placeholder="Size, colour, anything we should know"></textarea></label>' +
       '<div style="position:absolute;left:-9999px" aria-hidden="true"><input name="website" type="text" tabindex="-1" autocomplete="off"></div>' +
-      '<button class="btn" type="button" id="payBtn">Pay by card</button>' +
-      '<button class="btn ghost" type="submit">Send order, pay later</button>' +
+      '<button class="btn" type="button" id="payBtn"' + (cardOn ? '' : ' style="display:none"') + '>Pay by card</button>' +
+      '<button class="btn' + (cardOn ? ' ghost' : '') + '" type="submit">' + (cardOn ? 'Send order, pay later' : 'Send order') + '</button>' +
       '<div class="order-msg" role="status"></div>';
     form.addEventListener("submit", async function (ev) {
       ev.preventDefault();
@@ -418,6 +418,10 @@
   document.getElementById("cartClose").addEventListener("click", function () { cartDlg.close(); });
   cartDlg.addEventListener("click", function (ev) { if (ev.target === cartDlg) cartDlg.close(); });
   saveCart();
+
+  /* ---- Is card payment switched on? (the Pay by card button only shows if it is) ---- */
+  var cardOn = false;
+  fetch("/api/checkout").then(function (r) { return r.ok ? r.json() : {}; }).then(function (d) { cardOn = !!(d && d.card); }).catch(function () {});
 
   /* ---- Coming back from the card payment page ---- */
   (function () {
