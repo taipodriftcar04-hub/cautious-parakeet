@@ -4,8 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#e8eaf1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#12142b" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Orbweave: new Christmas gifts every day">
+<meta property="og:description" content="Add what you like to your cart and send your order. New products posted daily.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cautious-parakeet-jet.vercel.app/icon-512.png">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#eaf3fc" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1d33" media="(prefers-color-scheme: dark)">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -19,38 +24,43 @@
 <script defer src="/_vercel/insights/script.js"></script>
 <style>
   :root {
-    --bg: #e8eaf1;
-    --surface: #f6f7fb;
-    --ink: #181b3a;
-    --muted: #51567a;
-    --thread: #3a3fe0;
-    --thread-soft: #c9cbf5;
+    --bg: #eaf3fc;
+    --surface: #ffffff;
+    --ink: #14263d;
+    --muted: #4a5f7a;
+    --thread: #2c6bd1;
+    --thread-soft: #d3e5fa;
     --alert: #b3361f;
-    --line: #c4c7dc;
+    --line: #c9dbee;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #12142b;
-      --surface: #1b1e3d;
-      --ink: #e7e9f8;
-      --muted: #a2a7d1;
-      --thread: #8f98ff;
-      --thread-soft: #34388a;
+      --bg: #0f1d33;
+      --surface: #172a47;
+      --ink: #e8f1fb;
+      --muted: #a6bad3;
+      --thread: #7fb2ff;
+      --thread-soft: #25497d;
       --alert: #ff9a85;
-      --line: #2f3363;
+      --line: #2b4468;
     }
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     margin: 0;
-    background: var(--bg);
+    background: var(--bg) linear-gradient(180deg, #d5e6f8 0, var(--bg) 520px);
     color: var(--ink);
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     font-size: 17px;
     line-height: 1.6;
   }
+  /* a few soft snowflakes behind everything (still, so it stays fast) */
+  body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.9;
+    background-image: radial-gradient(circle, #fff 2px, transparent 2.5px), radial-gradient(circle, #fff 1.5px, transparent 2px), radial-gradient(circle, #fff 3px, transparent 3.5px);
+    background-size: 97px 97px, 151px 151px, 233px 233px; background-position: 0 0, 40px 70px, 120px 30px; }
+  @media (prefers-color-scheme: dark) { body { background: var(--bg) linear-gradient(180deg, #17294a 0, var(--bg) 520px); } body::before { opacity: 0.18; } }
   a { color: inherit; }
   :focus-visible { outline: 3px solid var(--thread); outline-offset: 3px; border-radius: 4px; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
@@ -157,6 +167,8 @@
   .order-msg { font-size: 0.93rem; }
   .order-msg.ok { color: var(--thread); font-weight: 600; }
   [hidden] { display: none !important; }
+  .info { padding: 40px 0 8px; } .info h2 { margin: 0 0 10px; } .info p { margin: 0; max-width: 62ch; white-space: pre-line; color: var(--muted); }
+  .wa { position: fixed; right: 16px; bottom: 16px; z-index: 5; display: flex; align-items: center; gap: 8px; background: #1f9d55; color: #fff; text-decoration: none; font-weight: 700; padding: 12px 18px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
   .xmas { background: #14532d; color: #fff; text-align: center; padding: 10px 16px; font-weight: 600; border-bottom: 3px solid #b91c1c; line-height: 1.4; }
   .order-msg.err { color: var(--alert); font-weight: 600; }
 
@@ -227,6 +239,9 @@
   </div>
 </section>
 
+<section class="info" id="about" hidden><div class="wrap"><h2>About</h2><p id="aboutText"></p></div></section>
+<section class="info" id="shipping" hidden><div class="wrap"><h2>Shipping and returns</h2><p id="shipText"></p></div></section>
+<a class="wa" id="waBtn" href="#" target="_blank" rel="noopener" hidden>Chat on WhatsApp</a>
 <section id="wall">
   <div class="wrap">
     <h2>The wall</h2>
@@ -424,9 +439,12 @@
 
   /* ---- Banner message (set from the admin page) ---- */
   fetch("/api/banner").then(function (r) { return r.ok ? r.json() : {}; }).then(function (d) {
-    var t = d && d.text ? String(d.text).trim() : "";
-    if (!t) return;
-    var x = document.getElementById("xmas"); x.textContent = "\uD83C\uDF84 " + t; x.hidden = false;
+    d = d || {};
+    var t = d.text ? String(d.text).trim() : "";
+    if (t) { var x = document.getElementById("xmas"); x.textContent = "\uD83C\uDF84 " + t; x.hidden = false; }
+    if (d.about) { document.getElementById("aboutText").textContent = d.about; document.getElementById("about").hidden = false; }
+    if (d.shipping) { document.getElementById("shipText").textContent = d.shipping; document.getElementById("shipping").hidden = false; }
+    if (/^\d{7,15}$/.test(d.whatsapp || "")) { var w = document.getElementById("waBtn"); w.href = "https://wa.me/" + d.whatsapp + "?text=" + encodeURIComponent("Hello, I have a question about your shop."); w.hidden = false; }
   }).catch(function () {});
 
   /* ---- Is card payment switched on? (the Pay by card button only shows if it is) ---- */
