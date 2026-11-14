@@ -1,7 +1,7 @@
 {
-  "name": "Orbweave",
-  "short_name": "Orbweave",
-  "description": "Orbweave: new products every day.",
+  "name": "Giftly Daily",
+  "short_name": "Giftly",
+  "description": "Giftly Daily: new products every day.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
