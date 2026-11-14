@@ -156,6 +156,8 @@
   .toast[hidden] { display: none; }
   .order-msg { font-size: 0.93rem; }
   .order-msg.ok { color: var(--thread); font-weight: 600; }
+  [hidden] { display: none !important; }
+  .xmas { background: #14532d; color: #fff; text-align: center; padding: 10px 16px; font-weight: 600; border-bottom: 3px solid #b91c1c; line-height: 1.4; }
   .order-msg.err { color: var(--alert); font-weight: 600; }
 
   .wall-tools { margin-top: 28px; display: grid; gap: 14px; max-width: 460px; }
@@ -184,6 +186,7 @@
 </style>
 </head>
 <body>
+<div class="xmas" id="xmas" role="note" hidden></div>
 
 <div class="wrap">
   <header class="top">
@@ -418,6 +421,13 @@
   document.getElementById("cartClose").addEventListener("click", function () { cartDlg.close(); });
   cartDlg.addEventListener("click", function (ev) { if (ev.target === cartDlg) cartDlg.close(); });
   saveCart();
+
+  /* ---- Banner message (set from the admin page) ---- */
+  fetch("/api/banner").then(function (r) { return r.ok ? r.json() : {}; }).then(function (d) {
+    var t = d && d.text ? String(d.text).trim() : "";
+    if (!t) return;
+    var x = document.getElementById("xmas"); x.textContent = "\uD83C\uDF84 " + t; x.hidden = false;
+  }).catch(function () {});
 
   /* ---- Is card payment switched on? (the Pay by card button only shows if it is) ---- */
   var cardOn = false;
