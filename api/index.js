@@ -300,8 +300,11 @@ module.exports = async function handler(req, res) {
       }
       if (action === "setbanner") {
         const text = cleanText(b.text, 140);
+        const whatsapp = String(b.whatsapp || "").replace(/\D/g, "").slice(0, 15);
+        const about = cleanText(b.about, 700), shipping = cleanText(b.shipping, 900);
+        if (whatsapp && whatsapp.length < 7) return res.status(400).json({ error: "Enter the WhatsApp number with country code, like 237677643566." });
         const old = (await list({ prefix: "settings/banner", limit: 50 })).blobs;
-        if (text) await put("settings/banner.json", JSON.stringify({ text }), { access: "public", contentType: "application/json", addRandomSuffix: true });
+        if (text || whatsapp || about || shipping) await put("settings/banner.json", JSON.stringify({ text, whatsapp, about, shipping }), { access: "public", contentType: "application/json", addRandomSuffix: true });
         for (const o of old) { try { await del(o.url); } catch (e) { /* ignore */ } }
         return res.status(200).json({ ok: true });
       }
@@ -444,11 +447,14 @@ module.exports = async function handler(req, res) {
 <h2>Posted products (${products.length})</h2>
 <div class="g">${products.map(productCard).join("") || "<p>No products yet.</p>"}</div>
 
-<h2>Banner at the top of the home page</h2>
+<h2>Banner, WhatsApp, About and Shipping</h2>
 <div class="box">
   <p>A short message everyone sees at the top, like "Order by December 15 for Christmas delivery". Leave it empty and press Save to remove the banner. Allow up to a minute for changes to show.</p>
   <form id="bf" style="display:grid;gap:10px;max-width:520px">
-    <label>Message <input type="text" id="bfText" maxlength="140" placeholder="Order by December 15 for Christmas delivery"></label>
+    <label>Banner message <input type="text" id="bfText" maxlength="140" placeholder="Christmas orders close December 10"></label>
+    <label>WhatsApp number with country code, digits only (shows a Chat button) <input type="text" id="bfWa" inputmode="numeric" placeholder="237677643566"></label>
+    <label>About you or your shop <textarea id="bfAbout" rows="4" maxlength="700"></textarea></label>
+    <label>Shipping and returns (where you deliver, cost, time, return policy) <textarea id="bfShip" rows="5" maxlength="900"></textarea></label>
     <div><button type="submit" id="bfBtn">Save banner</button></div>
     <div id="bfMsg" role="status"></div>
   </form>
@@ -504,13 +510,13 @@ document.getElementById("pf").onsubmit=function(ev){
     .then(function(){ location.reload(); })
     .catch(function(e){ msg.textContent=e.message||"Could not post. Try again."; btn.disabled=false; });
 };
-fetch("/api/banner").then(function(r){return r.json();}).then(function(d){ document.getElementById("bfText").value=d.text||""; }).catch(function(){});
+fetch("/api/banner").then(function(r){return r.json();}).then(function(d){ document.getElementById("bfText").value=d.text||""; document.getElementById("bfWa").value=d.whatsapp||""; document.getElementById("bfAbout").value=d.about||""; document.getElementById("bfShip").value=d.shipping||""; }).catch(function(){});
 document.getElementById("bf").onsubmit=function(ev){
   ev.preventDefault();
   var msg=document.getElementById("bfMsg"); msg.textContent="";
   var btn=document.getElementById("bfBtn"); btn.disabled=true;
-  post({action:"setbanner",text:document.getElementById("bfText").value})
-    .then(function(){ msg.textContent=document.getElementById("bfText").value.trim()?"Saved. It shows on the home page within a minute.":"Banner removed."; btn.disabled=false; })
+  post({action:"setbanner",text:document.getElementById("bfText").value,whatsapp:document.getElementById("bfWa").value,about:document.getElementById("bfAbout").value,shipping:document.getElementById("bfShip").value})
+    .then(function(){ msg.textContent="Saved. It shows on the home page within a minute."; btn.disabled=false; })
     .catch(function(e){ msg.textContent=e.message||"Could not save. Try again."; btn.disabled=false; });
 };
 var wfBlob=null;
@@ -836,12 +842,12 @@ module.exports = async function handler(req, res) {
   try {
     const { blobs } = await list({ prefix: "settings/banner", limit: 20 });
     blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
-    if (!blobs.length) return res.status(200).json({ text: "" });
+    if (!blobs.length) return res.status(200).json({ text: "", whatsapp: "", about: "", shipping: "" });
     const r = await fetch(blobs[0].url);
     const d = r.ok ? await r.json() : {};
-    return res.status(200).json({ text: String(d.text || "").slice(0, 140) });
+    return res.status(200).json({ text: String(d.text || "").slice(0, 140), whatsapp: String(d.whatsapp || "").replace(/\D/g, "").slice(0, 15), about: String(d.about || "").slice(0, 700), shipping: String(d.shipping || "").slice(0, 900) });
   } catch (e) {
-    return res.status(200).json({ text: "" });
+    return res.status(200).json({ text: "", whatsapp: "", about: "", shipping: "" });
   }
 };
 return module.exports;
