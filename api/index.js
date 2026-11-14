@@ -298,6 +298,13 @@ module.exports = async function handler(req, res) {
         await del(url);
         return res.status(200).json({ ok: true });
       }
+      if (action === "setbanner") {
+        const text = cleanText(b.text, 140);
+        const old = (await list({ prefix: "settings/banner", limit: 50 })).blobs;
+        if (text) await put("settings/banner.json", JSON.stringify({ text }), { access: "public", contentType: "application/json", addRandomSuffix: true });
+        for (const o of old) { try { await del(o.url); } catch (e) { /* ignore */ } }
+        return res.status(200).json({ ok: true });
+      }
       if (action === "addwall") {
         const raw = String(b.image || "").replace(/^data:image\/jpeg;base64,/, "");
         const buf = Buffer.from(raw, "base64");
@@ -437,6 +444,16 @@ module.exports = async function handler(req, res) {
 <h2>Posted products (${products.length})</h2>
 <div class="g">${products.map(productCard).join("") || "<p>No products yet.</p>"}</div>
 
+<h2>Banner at the top of the home page</h2>
+<div class="box">
+  <p>A short message everyone sees at the top, like "Order by December 15 for Christmas delivery". Leave it empty and press Save to remove the banner. Allow up to a minute for changes to show.</p>
+  <form id="bf" style="display:grid;gap:10px;max-width:520px">
+    <label>Message <input type="text" id="bfText" maxlength="140" placeholder="Order by December 15 for Christmas delivery"></label>
+    <div><button type="submit" id="bfBtn">Save banner</button></div>
+    <div id="bfMsg" role="status"></div>
+  </form>
+</div>
+
 <h2>Post a picture to the wall</h2>
 <div class="box">
   <p>Only you can post here. The picture shows on the wall right away (allow up to a minute). Location and camera details are removed from the picture before it uploads.</p>
@@ -486,6 +503,15 @@ document.getElementById("pf").onsubmit=function(ev){
   post({action:"addproduct",image:pfBlob,name:document.getElementById("pfName").value,price:document.getElementById("pfPrice").value,desc:document.getElementById("pfDesc").value,link:document.getElementById("pfLink").value})
     .then(function(){ location.reload(); })
     .catch(function(e){ msg.textContent=e.message||"Could not post. Try again."; btn.disabled=false; });
+};
+fetch("/api/banner").then(function(r){return r.json();}).then(function(d){ document.getElementById("bfText").value=d.text||""; }).catch(function(){});
+document.getElementById("bf").onsubmit=function(ev){
+  ev.preventDefault();
+  var msg=document.getElementById("bfMsg"); msg.textContent="";
+  var btn=document.getElementById("bfBtn"); btn.disabled=true;
+  post({action:"setbanner",text:document.getElementById("bfText").value})
+    .then(function(){ msg.textContent=document.getElementById("bfText").value.trim()?"Saved. It shows on the home page within a minute.":"Banner removed."; btn.disabled=false; })
+    .catch(function(e){ msg.textContent=e.message||"Could not save. Try again."; btn.disabled=false; });
 };
 var wfBlob=null;
 document.getElementById("wfImg").onchange=function(){
@@ -800,8 +826,29 @@ module.exports = async function handler(req, res) {
 return module.exports;
 })({ exports: {} }, {}, __req);
 
+__mods["banner"] = (function (module, exports, require) {
+// GET /api/banner -> { text }   the message shown in the Christmas banner at the top of the home page.
+// You change it from your admin page. Empty means no banner.
+const { list } = require("@vercel/blob");
+module.exports = async function handler(req, res) {
+  if (req.method !== "GET") { res.setHeader("Allow", "GET"); return res.status(405).json({ error: "Method not allowed" }); }
+  res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=120");
+  try {
+    const { blobs } = await list({ prefix: "settings/banner", limit: 20 });
+    blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+    if (!blobs.length) return res.status(200).json({ text: "" });
+    const r = await fetch(blobs[0].url);
+    const d = r.ok ? await r.json() : {};
+    return res.status(200).json({ text: String(d.text || "").slice(0, 140) });
+  } catch (e) {
+    return res.status(200).json({ text: "" });
+  }
+};
+return module.exports;
+})({ exports: {} }, {}, __req);
+
 const __routes = {
-  products: __mods.products, wall: __mods.wall, admin: __mods.admin, order: __mods.order, checkout: __mods.checkout,
+  products: __mods.products, wall: __mods.wall, admin: __mods.admin, order: __mods.order, checkout: __mods.checkout, banner: __mods.banner,
 };
 module.exports = async function handler(req, res) {
   const route = String((req.query && req.query.route) || "").toLowerCase().replace(/[^a-z-]/g, "");
