@@ -1,4 +1,4 @@
-// Orbweave: one function that serves every /api/<name> address.
+// Giftly Daily: one function that serves every /api/<name> address.
 require("@vercel/blob"); // static require so Vercel installs and bundles the storage library
 const __real = require;
 const __mods = {};
@@ -410,7 +410,7 @@ module.exports = async function handler(req, res) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   return res.status(200).send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
-<title>Orbweave admin</title>
+<title>Giftly Daily admin</title>
 <style>
   body{font-family:system-ui,sans-serif;margin:24px;background:#f3f4f8;color:#181b3a;max-width:1100px}
   h2{margin-top:40px}
@@ -423,7 +423,7 @@ module.exports = async function handler(req, res) {
   label{font-weight:600;display:block}
   .box{background:#fff;border:1px solid #ccd;border-radius:12px;padding:16px}
 </style></head><body>
-<h1>Orbweave admin</h1>
+<h1>Giftly Daily admin</h1>
 
 <h2>Orders (${orders.length})</h2>
 <p>Orders from the cart. Ones marked PAID BY CARD are already paid (see Stripe for the money). Others still need payment arranged. Contact each customer to agree delivery, then delete the order when you're done so their details don't pile up. Prices come from your product list, not from the customer's phone.</p>
@@ -668,7 +668,7 @@ module.exports = async function handler(req, res) {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: process.env.INVITE_FROM_EMAIL || "Orbweave <onboarding@resend.dev>",
+          from: process.env.INVITE_FROM_EMAIL || "Giftly Daily <onboarding@resend.dev>",
           to: [to],
           subject: `New order: ${lines.length} item${lines.length > 1 ? "s" : ""}${total ? " (" + total + ")" : ""}`,
           text: `${itemText}\n\n${total ? "Total: " + total + "\n\n" : ""}Name: ${name}\nContact: ${contact}\n${address ? "Delivery: " + address + "\n" : ""}\n${message}`,
@@ -810,7 +810,7 @@ async function confirm(req, res) {
         await fetch("https://api.resend.com/emails", {
           method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
           body: JSON.stringify({
-            from: process.env.INVITE_FROM_EMAIL || "Orbweave <onboarding@resend.dev>", to: [to],
+            from: process.env.INVITE_FROM_EMAIL || "Giftly Daily <onboarding@resend.dev>", to: [to],
             subject: "PAID order " + total,
             text: itemText + "\n\nPaid by card: " + total + "\n\nName: " + order.name + "\nContact: " + order.contact + "\n" + (order.address ? "Delivery: " + order.address + "\n" : "") + "\n" + order.message,
           }),
